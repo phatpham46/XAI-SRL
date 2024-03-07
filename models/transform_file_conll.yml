@@ -1,0 +1,86 @@
+transform1:
+  transform_func: coNLL_ner_pos_to_tsv
+  read_file_names:
+    - coNLL_train.txt
+    - coNLL_testa.txt
+    - coNLL_testb.txt
+    - coNLL_testa_abolish.txt
+    - coNLL_testb_abolish.txt
+    - coNLL_testa_alter.txt
+    - coNLL_testb_alter.txt
+    - coNLL_testa_begin.txt
+    - coNLL_testb_begin.txt
+    - coNLL_testa_block.txt
+    - coNLL_testb_block.txt
+    - coNLL_testa_catalyse.txt
+    - coNLL_testb_catalyse.txt
+    - coNLL_testa_confer.txt
+    - coNLL_testb_confer.txt
+    - coNLL_testa_decrease.txt
+    - coNLL_testb_decrease.txt
+    - coNLL_testa_delete.txt
+    - coNLL_testb_delete.txt
+    - coNLL_testa_develop.txt
+    - coNLL_testb_develop.txt
+    - coNLL_testa_disrupt.txt
+    - coNLL_testb_disrupt.txt
+    - coNLL_testa_eliminate.txt
+    - coNLL_testb_eliminate.txt
+    - coNLL_testa_encode.txt
+    - coNLL_testb_encode.txt
+    - coNLL_testa_express.txt
+    - coNLL_testb_express.txt
+    - coNLL_testa_generate.txt
+    - coNLL_testb_generate.txt
+    - coNLL_testa_inhibit.txt
+    - coNLL_testb_inhibit.txt
+    - coNLL_testa_initiate.txt
+    - coNLL_testb_initiate.txt
+    - coNLL_testa_lead.txt
+    - coNLL_testb_lead.txt
+    - coNLL_testa_lose.txt
+    - coNLL_testb_lose.txt
+    - coNLL_testa_modify.txt
+    - coNLL_testb_modify.txt
+    - coNLL_testa_mutate.txt
+    - coNLL_testb_mutate.txt
+    - coNLL_testa_proliferate.txt
+    - coNLL_testb_proliferate.txt
+    - coNLL_testa_recognize.txt
+    - coNLL_testb_recognize.txt
+    - coNLL_testa_result.txt
+    - coNLL_testb_result.txt
+    - coNLL_testa_skip.txt
+    - coNLL_testb_skip.txt
+    - coNLL_testa_splice.txt
+    - coNLL_testb_splice.txt
+    - coNLL_testa_transcribe.txt
+    - coNLL_testb_transcribe.txt
+    - coNLL_testa_transform.txt
+    - coNLL_testb_transform.txt
+    - coNLL_testa_translate.txt
+    - coNLL_testb_translate.txt
+    - coNLL_testa_truncate.txt
+    - coNLL_testb_truncate.txt
+  read_dir: ../data/coNLL_data
+  save_dir: ../data/coNLL_tsv
+
+transform2:
+  transform_func: coNLL_ner_pos_to_tsv
+  read_file_names:
+    - coNLL_train1.txt
+    - coNLL_testa1.txt
+    - coNLL_testb1.txt
+    - coNLL_testb1_dummy.txt
+  read_dir: ../data/coNLL_data
+  save_dir: ../
+
+transform3:
+  transform_func: coNLL_ner_pos_to_tsv
+  read_file_names:
+    - coNLL_train2.txt
+    - coNLL_testa2.txt
+    - coNLL_testb2.txt
+    - coNLL_testb2_dummy.txt
+  read_dir: ../data/coNLL_data
+  save_dir: ../data/coNLL_tsv
