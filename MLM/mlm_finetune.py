@@ -84,7 +84,7 @@ class PregeneratedDataset(Dataset):
             
         else:
             self.input_ids = np.zeros(shape=(num_samples, seq_len), dtype=np.int32)
-            self.input_masks = np.zeros(shape=(num_samples, seq_len), dtype=np.bool)
+            self.input_masks = np.zeros(shape=(num_samples, seq_len), dtype=np.bool_)
             self.lm_label_ids = np.full(shape=(num_samples, seq_len), dtype=np.int32, fill_value=MLM_IGNORE_LABEL_IDX)
         
         
@@ -104,7 +104,7 @@ class PregeneratedDataset(Dataset):
 
     def read_df(self, training_path, file_name):
         train_file = training_path / file_name
-        print("train file: ", train_file)
+       
         # assert train_file.is_file() 
         data_list = []
         with open(train_file) as f:
@@ -171,7 +171,6 @@ def is_POS_match(logits, input_ids, lm_label_ids):
 def custom_loss(input_ids, logits, labels):
   
     # Cross-entropy term
-    
     cross_entropy_term = F.cross_entropy(logits, labels, reduction='none')
     print("Cross entropy term shape: ", cross_entropy_term.shape)      ##Cross entropy term shape:  torch.Size([2720])
     logits_shape = (32, 85, VOCAB_SIZE)
@@ -180,8 +179,9 @@ def custom_loss(input_ids, logits, labels):
     labels_shape = (32, 85)
     labels_tensor  = labels.view(*labels_shape)
     
-    matching_term_lst = []
+    
     # Custom matching term
+    matching_term_lst = []
     for logit, input_id, label in zip(logits_tensor, input_ids, labels_tensor):
        
         matching_term = is_POS_match(logits=logit, input_ids=input_id, lm_label_ids=label)
@@ -218,8 +218,7 @@ def eval_model(args, model, validation_dataloader):
     for step, batch in enumerate(validation_dataloader):    
         batch = tuple(t.to(device) for t in batch)
         
-        b_input_ids, b_input_attention_mask, b_labels = batch    
-        print("b_input_ids: ", b_input_ids.shape)
+        b_input_ids, b_input_attention_mask, b_labels = batch  
         with torch.no_grad():       
             output = model(b_input_ids, attention_mask=b_input_attention_mask, labels=b_labels) 
             # Assuming b_labels and logits are NumPy arrays
@@ -263,7 +262,7 @@ def train(args, model, optimizer, scheduler, validation_dataloader, train_datalo
     train_steps = 0
     
     m = tf.metrics.Accuracy()
-    m_f1 = tf.metrics.F1Score(num_classes=2, average='micro')
+    m_f1 = tf.metrics.F1Score()
     print('\n========   Evaluate before training   ========')
     
     val_loss, val_accuracy = eval_model(args, model, validation_dataloader)
@@ -303,7 +302,11 @@ def train(args, model, optimizer, scheduler, validation_dataloader, train_datalo
                 outputs = model(input_ids=input_ids, attention_mask=input_mask, labels=lm_label_ids)
                 # outputs: loss, logits, hidden_states, attentions
                 
+                print('output loss shape: ', outputs.loss.shape)
+                break
                 loss = outputs.loss
+                # loss = custom_loss(input_ids=input_ids, logits=outputs.logits.view(-1, num_classes), labels=lm_label_ids.view(-1))
+                
                 logits = outputs.logits
                 m.update_state(lm_label_ids.cpu(), torch.argmax(logits, dim=-1).cpu())
                 m_f1.update_state(lm_label_ids.cpu(), torch.argmax(logits, dim=-1).cpu())
@@ -377,7 +380,7 @@ def train(args, model, optimizer, scheduler, validation_dataloader, train_datalo
                 # loss_dict["epoch"].append(epoch)
                 # loss_dict["batch_id"].append(step)
                 # loss_dict["mlm_loss"].append(loss.item())
-            
+            break
             # Save a trained model
             if epoch < args.epochs and (n_gpu > 1 and torch.distributed.get_rank() == 0 or n_gpu <= 1):
                 logging.info("** ** * Saving fine-tuned model ** ** * ")
@@ -397,10 +400,11 @@ def train(args, model, optimizer, scheduler, validation_dataloader, train_datalo
             tb.add_scalar('validation accucracy', val_accuracy, epoch)
             print("Average validiation loss: {:} avg val accuracy {:} : ".format(val_loss, val_accuracy))
     
-    # Save a trained model
-    if n_gpu > 1 and torch.distributed.get_rank() == 0 or n_gpu <=1:
-        logging.info("** ** * Saving fine-tuned model ** ** * ")
-        model.save_pretrained(args.output_dir)
+    # # Save a trained model
+    # if n_gpu > 1 and torch.distributed.get_rank() == 0 or n_gpu <=1:
+    #     logging.info("** ** * Saving fine-tuned model ** ** * ")
+    #     model.save_pretrained(args.output_dir)
+    
     #     tokenizer.save_pretrained(args.output_dir)
     #     df = pd.DataFrame.from_dict(loss_dict)
     #     df.to_csv(args.output_dir/"losses.csv")
@@ -436,16 +440,19 @@ def prepare_data(args):
 
 
 def pretrain_on_treatment(args):
+    # Prepare model
     model = BertForMaskedLM.from_pretrained(args.bert_model)
     
+    # Prepare data
     validation_dataloader, train_dataloader, test_dataloader = prepare_data(args)
-    print("len dataloader: ", len(validation_dataloader), len(test_dataloader), len(train_dataloader))
  
     # Prepare parameters
     args.train_batch_size = args.train_batch_size // args.gradient_accumulation_steps
     num_train_optimization_steps = math.ceil(args.num_samples/args.train_batch_size) // args.gradient_accumulation_steps
-    # num_train_optimization_steps = len(train_dataloader) // (args.gradient_accumulation_steps * args.epochs)
     print("Num train optimization steps: ", num_train_optimization_steps)
+    
+    # Prepare loss
+    
     
     # Prepare optimizer
     param_optimizer = list(model.named_parameters())
@@ -456,13 +463,15 @@ def pretrain_on_treatment(args):
         {'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
     ]
    
-    optimizer = AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon)
+    optimizer = torch.optim.AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon)
     scheduler = get_linear_schedule_with_warmup(optimizer,
                                                 num_warmup_steps=args.warmup_steps,
                                                 num_training_steps=num_train_optimization_steps)
     
+    # Train model
     train(args, model, optimizer, scheduler, validation_dataloader, train_dataloader)
     
+    # Evaluate model
     test_loss, test_accuracy = eval_model(args, model, test_dataloader)
     print(f'Test loss: {test_loss} Test accuracy: {test_accuracy}')
 

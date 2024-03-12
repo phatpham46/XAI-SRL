@@ -17,30 +17,7 @@ wwm_probability = 0.1
 import random
 # Load the English language model
 nlp = spacy.load("en_core_web_sm")
-
-
-def get_pos_tag(text, index):
-    # Process the text with spaCy
-    doc = nlp(text)
-
-    # Check if the index is within the bounds
-    if index < 0 or index >= len(doc):
-        return "Index out of bounds"
-
-    # Get the POS tag for the word at the specified index
-    pos_tag = doc[index].pos_
-    return pos_tag
-
-
-def get_pos_tags(data):
-    pos_tags = []
-    for line in data:
-        pos_tag = get_pos_tag(line, index)
-        line['pos_tag'] = pos_tag
-        
-def pos_match(textA, textB, index):
-    return 1 if get_pos_tag(textA, index) == get_pos_tag(textB, index) else 0
-
+      
 def get_files(dir):
     files = []
     for path in os.listdir(dir):
@@ -133,22 +110,26 @@ def tokenize_csv_to_json(dataDir, wriDir, tokenizer):
             print("Processing file: ", file)
             
             for idx, sample in enumerate(data['text']) :    
+                count_masked_sens = 0
                 uids = data['id'][idx]   
                 
-                # Process the tokenized text with spaCy
-                # doc = nlp(sample)
-                words = re.split(r'([.,;\s])', sample)    
-                words = [word for word in words if word != ' ' and word != ''] 
+                # Get the POS tag for each word in the text
+                doc = nlp(sample)
+
+                # Get the POS tag for each word in the text
+                pos_tags = [token.pos_ for token in doc]
                 
-                mask_10, labels_10 = masking_sentence_word(words, tokenizer)  # mask là masked_sentence
-                # ['A', 'G-to-A', 'transition', 'at', '[MASK]', 'first', 'nucleotide', 'of', 'intron', '2', 'of', '[MASK]', '1', 'abolished', normal', 'splicing', '.']
+                # words = re.split(r'([.,;\s])', sample)    
+                # words = [word for word in words if word != ' ' and word != ''] 
+                words = [token for token in doc]
+                mask_sens, labels_sens = masking_sentence_word(words, tokenizer, pos_tags)  # mask là masked_sentence
+                # ['A', 'G-to-A', 'transition', 'at', '[MASK]', 'first', 'nucleotide', 'of', 'intron', '2', 'of', 'index', '1', 'abolished', normal', 'splicing', '.']
                 
-                # pos_tags = [token.pos_ for token in doc]
-                for mask, label in zip(mask_10, labels_10):
-                   
+                for mask, label in zip(mask_sens, labels_sens):
+                    
                     out = tokenizer.encode_plus(text = ' '.join(mask), add_special_tokens=True,
                                     truncation_strategy ='only_first',
-                                    max_length = MAX_SEQ_LEN, pad_to_max_length=True) 
+                                    max_length = MAX_SEQ_LEN, padding='max_length') 
 
                     attention_mask = None
                     tokenIds = out['input_ids']                
@@ -157,8 +138,9 @@ def tokenize_csv_to_json(dataDir, wriDir, tokenizer):
                             
                     assert len(tokenIds) == MAX_SEQ_LEN, "Mismatch between processed tokens and labels"
                     
-                    feature = {'uid':str(uids), 'token_id': tokenIds, 'attention_mask': attention_mask, 'labels': label}
-                    
+                    #feature = {'uid':str(uids), 'token_id': tokenIds, 'attention_mask': attention_mask, 'labels': label}
+                    feature = {'uid':str(uids)+str('_')+str(count_masked_sens), 'token_id': tokenIds, 'attention_mask': attention_mask, 'labels': label}
+                    count_masked_sens += 1 
                     wf.write('{}\n'.format(json.dumps(feature))) 
             print("Done file: ", file)
            
@@ -168,56 +150,38 @@ def is_in_vocab(token, tokenizer):
     '''
     return 1 if str(token).lower() in tokenizer.vocab.keys() else 0
 
-def masking_sentence_word(words, tokenizer):
+def masking_sentence_word(words, tokenizer, pos_tags):
     '''
-    Function to mask random token in a sentence and return the masked sentence and the corresponding label ids
+    Function to mask each token (only token in vocab and content word) in a sentence and return the masked sentence and the corresponding label ids
+    
+    input: words: the full token of original sentence
+           tokenizer: the tokenizer object
+           
+    output: masked_sentences: a list of masked sentences from the original sentence
+            label_ids: a list of label ids corresponding to the masked sentences
     '''
     except_tokens = [tokenizer.cls_token, tokenizer.sep_token, tokenizer.pad_token]
     
-    masked_idx = random.sample(range(len(words)), len(words) - 2)
-    print(masked_idx)
-    # create 10 sentences with 10 masked tokens
-    
-    sen_10 = []
-    label_10 = []
+    # create a list to store the masked sentences and the corresponding label ids
+    masked_sens = []
+    labels_masked_sens = []
     labels = [-100] * MAX_SEQ_LEN 
   
-    for i in range(len(words)-2): 
-        tmp_sen = copy.deepcopy(words)
-       
+    for i in range(len(words)): 
+        tmp_sen = [str(word) for word in words]
+
         tmp_label = copy.deepcopy(labels)
-        if len(sen_10) < 10:
-            masked_token = tmp_sen[masked_idx[i]]
-            if (masked_token not in except_tokens) and is_in_vocab(tmp_sen[masked_idx[i]], tokenizer) == 1:
-               
-                tmp_label[masked_idx[i]] = tokenizer.convert_tokens_to_ids(tmp_sen[masked_idx[i]])
-                tmp_sen[masked_idx[i]] = tokenizer.mask_token
-                
-                sen_10.append(tmp_sen)
-                label_10.append(tmp_label)
-        else :
-            break
+        if (tmp_sen[i] not in except_tokens) and is_in_vocab(tmp_sen[i], tokenizer) == 1 and pos_tags[i] in ['NOUN', 'VERB', 'ADJ', 'ADV']:
+            
+            tmp_label[i+1] = tokenizer.convert_tokens_to_ids(tmp_sen[i])
+            tmp_sen[i] = tokenizer.mask_token
+            
+            masked_sens.append(tmp_sen)
+            labels_masked_sens.append(tmp_label)
        
-    return sen_10, label_10
-    
-def masked_df(df, tokenizer):
-    '''
-    Function to mask tokens in a dataframe and return the masked dataframe.
-    df has columns ['uid', 'token_id', 'mask', 'pos', 'masked_token_id', 'label_id']
-    '''
-    masked_sentences = []
-    labels = []
-    for idx, sen in enumerate(df['token_id']):
-        masked_sentence, label = masking_sentence_word(sen, tokenizer)
+    return masked_sens, labels_masked_sens
 
-        masked_sentences.append(masked_sentence)
-        labels.append(label)
-    
-    df['masked_token_id'] = masked_sentences
-    df['label_id'] = labels
-    return df
-
-def data_split(dataDir, wriDir, tokenizer, batch_size=32):
+def data_split(dataDir, wriDir):
     
     '''
     data_split('mlm_output', 'mlm_prepared_data', tokenizer)
@@ -230,10 +194,10 @@ def data_split(dataDir, wriDir, tokenizer, batch_size=32):
     test_df = pd.DataFrame()
     
     for file in files:
-        #f = open(os.path.join(dataDir, file))
+       
         with open(os.path.join(dataDir, file)) as f:
             json_data = pd.read_json(f, lines=True)
-        
+            
         train, testt = train_test_split(json_data, test_size=0.4)
         dev, test = train_test_split(testt, test_size=0.5)
         
@@ -249,25 +213,8 @@ def data_split(dataDir, wriDir, tokenizer, batch_size=32):
     dev_df.to_json(os.path.join(wriDir, 'dev_mlm.json'), orient='records', lines=True)
     test_df.to_json(os.path.join(wriDir, 'test_mlm.json'), orient='records', lines=True)
     
-    # We'll take training samples in random order. 
-    # train_dataloader  = DataLoader(
-    #             train_df,  # The training samples.
-    #             sampler = RandomSampler(train_df), # Select batches randomly
-    #             batch_size = batch_size # Trains with this batch size.
-    #         )
-    # validation_dataloader = DataLoader(
-    #             dev_df, # The validation samples.
-    #             sampler = SequentialSampler(dev_df), # Pull out batches sequentially.
-    #             batch_size = batch_size # Evaluate with this batch size.
-    #       )
-  
-    # test_dataloader = DataLoader(
-    #             test_df, # The validation samples.
-    #             sampler = SequentialSampler(test_df), # Pull out batches sequentially.
-    #             batch_size = batch_size # Evaluate with this batch size.
-    #         )
-    #return train_dataloader, validation_dataloader, test_dataloader
     return train_df, dev_df, test_df
+
 from multiprocessing import Pool
 EPOCHS = 5 
 NUMBER_WORKERS = 5 
@@ -305,7 +252,7 @@ def main():
     tokenizer = BertTokenizer.from_pretrained('dmis-lab/biobert-base-cased-v1.2')
     #tokenize_csv_to_json('./interim/', './mlm_output/', tokenizer)
     
-    data_split('mlm_output', 'mlm_prepared_data', tokenizer)
+    data_split('./mlm_output/', './mlm_prepared_data/')
     
 if __name__ == "__main__":
     main() 
