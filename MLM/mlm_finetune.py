@@ -19,8 +19,7 @@ from scipy.special import softmax
 
 sys.path.insert(1, '../')
 
-import sys
-# sys.path.insert(1, '/content/SRL-for-BioBERT')
+# sys.path.insert(1, '/content/SRLPredictionEasel')
 from embedding import read_data
 from torch.utils.data import DataLoader, Dataset, RandomSampler, SequentialSampler
 from torch.utils.data.distributed import DistributedSampler 
@@ -210,31 +209,40 @@ def eval_model(args, model, validation_dataloader):
     model.to(device)
     
     t0 = time.time()
-    model.eval()
     total_eval_loss = 0
     total_eval_accuracy = 0
+    model.eval()
+    
     m = tf.metrics.Accuracy()
     
-    for step, batch in enumerate(validation_dataloader):    
+    for batch_index, batch in enumerate(validation_dataloader):   
+         
         batch = tuple(t.to(device) for t in batch)
-        
         b_input_ids, b_input_attention_mask, b_labels = batch  
-        with torch.no_grad():       
+        
+        
+        # step 1. compute the output    
+        with torch.no_grad():   
             output = model(b_input_ids, attention_mask=b_input_attention_mask, labels=b_labels) 
+            
             # Assuming b_labels and logits are NumPy arrays
             m.update_state(b_labels.cpu(), torch.argmax(output.logits, dim=-1).cpu())
         
             # b_labels_np = b_labels.cpu().numpy()
             # logits_np = torch.argmax(output.logits, dim=-1).cpu().numpy()
             
-        accuracy = m.result().numpy()
-        # accuracy = accuracy_score(b_labels_np, logits_np)
-        total_eval_loss += output.loss.item()
-        total_eval_accuracy += accuracy
+        # step 2. compute the loss
+        loss = output.loss
+        loss_batch = loss.item()
+        total_eval_loss += (loss_batch - total_eval_loss) / (batch_index + 1)
         
-    avg_eval_loss = total_eval_loss / len(validation_dataloader)
-    avg_eval_accuracy = total_eval_accuracy / len(validation_dataloader) 
-    return (avg_eval_loss, avg_eval_accuracy)
+        # step 3: compute the accuracy
+        accuracy = m.result().numpy()
+        total_eval_accuracy += (accuracy - total_eval_accuracy) / (batch_index + 1)
+        
+    # avg_eval_loss = total_eval_loss / len(validation_dataloader)
+    # avg_eval_accuracy = total_eval_accuracy / len(validation_dataloader) 
+    return (total_eval_loss, total_eval_accuracy)
 
 def train(args, model, optimizer, scheduler, validation_dataloader, train_dataloader):
     # assert args.pregenerated_data.is_file(), \
@@ -263,12 +271,12 @@ def train(args, model, optimizer, scheduler, validation_dataloader, train_datalo
     
     m = tf.metrics.Accuracy()
     m_f1 = tf.metrics.F1Score()
-    print('\n========   Evaluate before training   ========')
+    # print('\n========   Evaluate before training   ========')
     
-    val_loss, val_accuracy = eval_model(args, model, validation_dataloader)
-    tb.add_scalar('validation loss', val_loss)
-    tb.add_scalar('validation accucracy', val_accuracy)
-    print("Average validiation loss: {:} avg val accuracy {:} : ".format(val_loss, val_accuracy))
+    # val_loss, val_accuracy = eval_model(args, model, validation_dataloader)
+    # tb.add_scalar('validation loss', val_loss)
+    # tb.add_scalar('validation accucracy', val_accuracy)
+    # print("Average validiation loss: {:} avg val accuracy {:} : ".format(val_loss, val_accuracy))
     
     # Prepare model
     model = BertForMaskedLM.from_pretrained(args.bert_model)
@@ -284,68 +292,84 @@ def train(args, model, optimizer, scheduler, validation_dataloader, train_datalo
 
     loss_dict = defaultdict(list)
     for epoch in range(args.epochs):
-        total_train_loss  = 0 
-        total_train_accuracy = 0
-        print('\n======== Epoch {:} / {:} ========'.format(epoch + 1, args.epochs))
-        
+        total_train_loss  = 0 # running loss
+        total_train_accuracy = 0  # running accuracy
+        print('\n======== EPOCH {:} / {:} ========'.format(epoch + 1, args.epochs))
+       
+        num_train_steps = math.ceil(args.num_samples / args.train_batch_size) * args.epochs // args.gradient_accumulation_steps
+    
+        total_steps = int(num_train_steps * args.gradient_accumulation_steps / args.epochs)
         t0 = time.time()
         model.train()
         print('put model in train mode')
 
-        with tqdm(total=len(train_dataloader), desc=f"Epoch {epoch}") as pbar:
-            for step, batch in enumerate(train_dataloader):
+        with tqdm(total=total_steps,position=epoch, desc=f"Epoch {epoch}") as progress:
+            for batch_index, batch in enumerate(train_dataloader):
                 
                 batch = tuple(t.to(device) for t in batch)  
-                print("Batch: ", batch)             
-                input_ids, input_mask, lm_label_ids = batch     
-                model.zero_grad() 
-                outputs = model(input_ids=input_ids, attention_mask=input_mask, labels=lm_label_ids)
-                # outputs: loss, logits, hidden_states, attentions
+                input_ids, input_mask, lm_label_ids = batch 
                 
-                print('output loss shape: ', outputs.loss.shape)
-                break
+                # step 1: zero the gradient     
+                # model.zero_grad() 
+                optimizer.zero_grad()
+                
+                # step 2: compute the output
+                outputs = model(input_ids=input_ids, attention_mask=input_mask, labels=lm_label_ids) # outputs: loss, logits, hidden_states, attentions
+                
+                print('\n Output LOSS SHAPE: ', outputs.loss.shape)
+                print('\n Output LOGITS SHAPE: ', outputs.loss.shape)
+                
+                # step 3: compute the loss
                 loss = outputs.loss
                 # loss = custom_loss(input_ids=input_ids, logits=outputs.logits.view(-1, num_classes), labels=lm_label_ids.view(-1))
-                
-                logits = outputs.logits
-                m.update_state(lm_label_ids.cpu(), torch.argmax(logits, dim=-1).cpu())
-                m_f1.update_state(lm_label_ids.cpu(), torch.argmax(logits, dim=-1).cpu())
-                #b_labels_np = lm_label_ids.cpu().numpy()
-                #print("LOGIT TYPE: ", type(logits)) 
-            
-                #logits_np = torch.argmax(logits, dim=-1).cpu().numpy()
-                #print('shape of logits_np: ', logits_np.shape)
-                
-                # Compute accuracy using scikit-learn's accuracy_score
-                accuracy = m.result().numpy()
-                #accuracy = accuracy_score(b_labels_np, logits_np)
-                
-                elapsed = 0
-                if step % 50 == 0 and step > 0:
-                    elapsed = format_time(time.time() - t0)
-                    print('  Batch {:>5,}  of  {:>5,}.    Elapsed: {:}. loss is {:} accuracy is {:}'.format(step, len(train_dataloader), elapsed, loss.item(), accuracy ))
-                
-                
-                #returns the average loss of batch
-                train_steps += len(batch[0])
-                
-                tb.add_scalar('train loss', outputs.loss, train_steps)
-                tb.add_scalar('train accuracy', accuracy, train_steps)
-                
                 if n_gpu > 1:
                     loss = loss.mean() # mean() to average on multi-gpu.
                 if args.gradient_accumulation_steps > 1:
                     loss = loss / args.gradient_accumulation_steps
-                    
+                
+                
+                # step 4: use loss to produce gradients 
                 loss.backward()
                 
-                total_train_loss += loss.item()
-                total_train_accuracy += accuracy
+                
+                # step 5: use optimizer to take gradient step
+                if (batch_index + 1) % args.gradient_accumulation_steps == 0:
+                    optimizer.step()
+                    scheduler.step() #update the learning rate
+                    optimizer.zero_grad()
+                
+                # -----------------------------------------------------------
+                # Compute the accuracy
+                logits = outputs.logits
+                
+                m.update_state(lm_label_ids.cpu(), torch.argmax(logits, dim=-1).cpu())
+                m_f1.update_state(lm_label_ids.cpu(), torch.argmax(logits, dim=-1).cpu())
+                
+                accuracy_batch = m.result().numpy()
+                
+                loss_batch = loss.item()
+                total_train_loss += (loss_batch - total_train_loss) / (batch_index + 1)
+                #accuracy = accuracy_score(b_labels_np, logits_np)
+                
+                elapsed = 0
+                if batch_index % 50 == 0 and batch_index > 0:
+                    elapsed = format_time(time.time() - t0)
+                    print('  Batch {:>5,}  of  {:>5,}.    Elapsed: {:}. loss is {:} accuracy is {:}'.format(batch_index, len(train_dataloader), elapsed, loss.item(), accuracy_batch ))
+                
+                
+                # returns the average loss of batch
+                train_steps += len(batch[0])
+                
+                tb.add_scalar('train loss', outputs.loss, train_steps)
+                tb.add_scalar('train accuracy', accuracy_batch, train_steps)
+                
+                total_train_accuracy += (accuracy_batch - total_train_accuracy) / (batch_index + 1)
                 
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-                optimizer.step()
-                scheduler.step() #update the learning rate
-                
+                loss_dict["epoch"].append(epoch)
+                loss_dict["batch_id"].append(batch_index)
+                loss_dict["mlm_loss"].append(total_train_loss)
+                progress.update(1)
                 # print top 10 masked tokens
                 # print(tokenizer.convert_ids_to_tokens(torch.topk(outputs.logits[0, idx, :], 10).indices))
                 #print("Input id shape: ", input_ids.shape)  
@@ -355,7 +379,6 @@ def train(args, model, optimizer, scheduler, validation_dataloader, train_datalo
                 
                 # num_classes = outputs.logits[0].size(1) # Output:  shape (), (N)
                 # #print("Num classes ", num_classes) # 28996
-                
                 
                 
                 # loss = custom_loss(input_ids=input_ids, logits=outputs.logits.view(-1, num_classes), labels=lm_label_ids.view(-1))
@@ -377,39 +400,38 @@ def train(args, model, optimizer, scheduler, validation_dataloader, train_datalo
                 #     scheduler.step()  # Update learning rate schedule
                 #     optimizer.zero_grad()
                 #     global_step += 1
-                # loss_dict["epoch"].append(epoch)
-                # loss_dict["batch_id"].append(step)
-                # loss_dict["mlm_loss"].append(loss.item())
-            break
+                
+            
             # Save a trained model
             if epoch < args.epochs and (n_gpu > 1 and torch.distributed.get_rank() == 0 or n_gpu <= 1):
                 logging.info("** ** * Saving fine-tuned model ** ** * ")
                 epoch_output_dir = args.output_dir / f"epoch_{epoch}"
                 epoch_output_dir.mkdir(parents=True, exist_ok=True)
                 model.save_pretrained(epoch_output_dir)
-            #   tokenizer.save_pretrained(epoch_output_dir)
                 
-            avg_train_loss = total_train_loss / len(train_dataloader) 
-            avg_train_accuracy = total_train_accuracy / len(train_dataloader) 
+                
+            # avg_train_loss = total_train_loss / len(train_dataloader)
+            # avg_train_accuracy = total_train_accuracy / len(train_dataloader)
             training_time = format_time(time.time() - t0)
-            print("  Average training loss: {:} Average training accuracy: {:} Training epcoh took: {:}".format(avg_train_loss,avg_train_accuracy, training_time))
+            print("  Average training loss: {:} Average training accuracy: {:} Training epcoh took: {:}".format(total_train_loss, total_train_accuracy, training_time))
             
             
-            val_loss, val_accuracy = eval_model(args, model, validation_dataloader)
-            tb.add_scalar('validation loss', val_loss, epoch)
-            tb.add_scalar('validation accucracy', val_accuracy, epoch)
-            print("Average validiation loss: {:} avg val accuracy {:} : ".format(val_loss, val_accuracy))
+            # val_loss, val_accuracy = eval_model(args, model, validation_dataloader)
+            # tb.add_scalar('validation loss', val_loss, epoch)
+            # tb.add_scalar('validation accucracy', val_accuracy, epoch)
+            # print("Average validiation loss: {:} avg val accuracy {:} : ".format(val_loss, val_accuracy))
     
-    # # Save a trained model
-    # if n_gpu > 1 and torch.distributed.get_rank() == 0 or n_gpu <=1:
-    #     logging.info("** ** * Saving fine-tuned model ** ** * ")
-    #     model.save_pretrained(args.output_dir)
+    # Save a trained model
+    if n_gpu > 1 and torch.distributed.get_rank() == 0 or n_gpu <=1:
+        logging.info("** ** * Saving fine-tuned model ** ** * ")
+        model.save_pretrained(args.output_dir)
     
-    #     tokenizer.save_pretrained(args.output_dir)
-    #     df = pd.DataFrame.from_dict(loss_dict)
-    #     df.to_csv(args.output_dir/"losses.csv")
+        # tokenizer.save_pretrained(args.output_dir)
+        # df = pd.DataFrame.from_dict(loss_dict)
+        # df.to_csv(args.output_dir/"losses.csv")
 def prepare_data(args):
     
+    # Prepare validation dataloader
     val_dataset = PregeneratedDataset(training_path=args.pregenerated_data, file_name='dev_mlm.json', tokenizer=tokenizer,  reduce_memory=args.reduce_memory)
     
     validation_dataloader = DataLoader(
@@ -417,17 +439,20 @@ def prepare_data(args):
         sampler=SequentialSampler(val_dataset), 
         batch_size=args.train_batch_size, 
         num_workers=NUM_CPU)
+
     
-    # prepare train dataloader
+    # Prepare train dataloader
     epoch_dataset = PregeneratedDataset(training_path=args.pregenerated_data, file_name='train_mlm.json', tokenizer=tokenizer,
                                             reduce_memory=args.reduce_memory)
     if args.local_rank == -1:
         train_sampler = RandomSampler(epoch_dataset)
     else:
         train_sampler = DistributedSampler(epoch_dataset)
+    
     train_dataloader = DataLoader(epoch_dataset, sampler=train_sampler, batch_size=args.train_batch_size, num_workers=NUM_CPU)
     
     
+    # Prepare test dataloader
     test_dataset = PregeneratedDataset(training_path=args.pregenerated_data, file_name='test_mlm.json', tokenizer=tokenizer,  reduce_memory=args.reduce_memory)
     
     test_data_loader = DataLoader(
@@ -447,9 +472,14 @@ def pretrain_on_treatment(args):
     validation_dataloader, train_dataloader, test_dataloader = prepare_data(args)
  
     # Prepare parameters
-    args.train_batch_size = args.train_batch_size // args.gradient_accumulation_steps
-    num_train_optimization_steps = math.ceil(args.num_samples/args.train_batch_size) // args.gradient_accumulation_steps
-    print("Num train optimization steps: ", num_train_optimization_steps)
+    # args.train_batch_size = args.train_batch_size // args.gradient_accumulation_steps
+    
+    # num_train_optimization_steps = math.ceil(args.num_samples/args.train_batch_size) // args.gradient_accumulation_steps
+    num_train_steps = math.ceil(args.num_samples / args.train_batch_size) * args.epochs // args.gradient_accumulation_steps
+    
+    total_steps = int(num_train_steps * args.gradient_accumulation_steps / args.epochs)
+    
+    print("Num train optimization steps: ", total_steps)
     
     # Prepare loss
     
@@ -466,10 +496,11 @@ def pretrain_on_treatment(args):
     optimizer = torch.optim.AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon)
     scheduler = get_linear_schedule_with_warmup(optimizer,
                                                 num_warmup_steps=args.warmup_steps,
-                                                num_training_steps=num_train_optimization_steps)
+                                                num_training_steps=total_steps)
     
     # Train model
     train(args, model, optimizer, scheduler, validation_dataloader, train_dataloader)
+    
     
     # Evaluate model
     test_loss, test_accuracy = eval_model(args, model, test_dataloader)
@@ -527,9 +558,9 @@ def main():
     parser.add_argument("--corpus_type", type=str, required=False, default="")
     args = parser.parse_args()
     
-    #args.output_dir = Path('/content/drive/MyDrive/Colab Notebooks/mlm_finetune_output')/ 'model'
+    # args.output_dir = Path('/content/drive/MyDrive/ColabNotebooks/mlm_finetune_output')/ 'model'
     args.output_dir = Path('mlm_finetune_output') / "model"
-    #args.pregenerated_data = pathlib.Path('/content/drive/MyDrive/Colab Notebooks/mlm_prepare_data')
+    # args.pregenerated_data = pathlib.Path('/content/drive/MyDrive/ColabNotebooks/mlm_prepare_data')
     args.pregenerated_data = pathlib.Path('mlm_prepared_data')
     
     # data_split('mlm_output', 'mlm_prepared_data', tokenizer)[0]
