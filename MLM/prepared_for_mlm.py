@@ -11,6 +11,7 @@ from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from transformers import BertTokenizer 
 from pathlib import Path
 from tqdm import tqdm, trange
+import torch
 MAX_SEQ_LEN = 85
 VOCAB_SIZE = 28996 
 wwm_probability = 0.1
@@ -101,11 +102,17 @@ def tokenize_csv_to_json(dataDir, wriDir, tokenizer):
     '''
     
     # Read train file
+    if not os.path.exists(dataDir):
+        assert False, "Data directory does not exist"
+    
     files = get_files(dataDir)
+    
+    if not os.path.exists(wriDir):
+        os.makedirs(wriDir)
     
     for file in files:
         writefile = os.path.join(wriDir, 'mlm_{}.json'.format(file.split('.')[0]))
-        with open(writefile, 'w') as wf:
+        with open(writefile, 'wb') as wf:
             data = pd.read_csv(os.path.join(dataDir, file))
             print("Processing file: ", file)
             
@@ -123,7 +130,7 @@ def tokenize_csv_to_json(dataDir, wriDir, tokenizer):
                 # words = [word for word in words if word != ' ' and word != ''] 
                 words = [token for token in doc]
                 mask_sens, labels_sens = masking_sentence_word(words, tokenizer, pos_tags)  # mask là masked_sentence
-                # ['A', 'G-to-A', 'transition', 'at', '[MASK]', 'first', 'nucleotide', 'of', 'intron', '2', 'of', 'index', '1', 'abolished', normal', 'splicing', '.']
+               
                 
                 for mask, label in zip(mask_sens, labels_sens):
                     
@@ -136,12 +143,14 @@ def tokenize_csv_to_json(dataDir, wriDir, tokenizer):
                     if 'attention_mask' in out.keys():
                         attention_mask = out['attention_mask']
                             
-                    assert len(tokenIds) == MAX_SEQ_LEN, "Mismatch between processed tokens and labels"
+                    assert len(tokenIds[0]) == MAX_SEQ_LEN, "Mismatch between processed tokens and labels"
                     
-                    #feature = {'uid':str(uids), 'token_id': tokenIds, 'attention_mask': attention_mask, 'labels': label}
-                    feature = {'uid':str(uids)+str('_')+str(count_masked_sens), 'token_id': tokenIds, 'attention_mask': attention_mask, 'labels': label}
+                    feature = {'uid':str(uids) + str('_') + str(count_masked_sens), 'token_id': tokenIds, 'attention_mask': attention_mask, 'labels': label}
+                    
                     count_masked_sens += 1 
                     wf.write('{}\n'.format(json.dumps(feature))) 
+            
+            
             print("Done file: ", file)
            
 def is_in_vocab(token, tokenizer):
@@ -193,6 +202,9 @@ def data_split(dataDir, wriDir):
     dev_df = pd.DataFrame()
     test_df = pd.DataFrame()
     
+    if not os.path.exists(wriDir):
+        os.makedirs(wriDir)
+        
     for file in files:
        
         with open(os.path.join(dataDir, file)) as f:
@@ -250,7 +262,7 @@ BERT_PRETRAINED_MODEL = 'dmis-lab/biobert-base-cased-v1.2'
             
 def main():
     tokenizer = BertTokenizer.from_pretrained('dmis-lab/biobert-base-cased-v1.2')
-    #tokenize_csv_to_json('./interim/', './mlm_output/', tokenizer)
+    tokenize_csv_to_json('./interim/', './mlm_output/', tokenizer)
     
     data_split('./mlm_output/', './mlm_prepared_data/')
     

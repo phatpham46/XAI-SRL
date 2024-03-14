@@ -16,7 +16,7 @@ import torch.nn as nn
 import torch
 import sys
 from scipy.special import softmax
-
+import matplotlib.pyplot as plt
 sys.path.insert(1, '../')
 
 # sys.path.insert(1, '/content/SRLPredictionEasel')
@@ -42,7 +42,7 @@ tokenizer = BertTokenizer.from_pretrained("dmis-lab/biobert-base-cased-v1.2", do
 MLM_IGNORE_LABEL_IDX = -1
 VOCAB_SIZE = 28996 
 BATCH_SIZE = 32
-EPOCHS = 10
+EPOCHS = 2
 MAX_SEQ_LEN = 85
 NUM_CPU = count_num_cpu_gpu()[0]
 
@@ -244,6 +244,39 @@ def eval_model(args, model, validation_dataloader):
     # avg_eval_accuracy = total_eval_accuracy / len(validation_dataloader) 
     return (total_eval_loss, total_eval_accuracy)
 
+def visualize_acc(loss_dict):
+    '''
+    Function to visualize loss and accuracy for each epoch
+    Input:
+        dict: 
+    '''
+    
+    # Extract data
+    epochs = loss_dict["epoch"]
+    loss = loss_dict["mlm_loss"]
+    accuracy = loss_dict["mlm_acc"]
+
+    # Plotting loss
+    plt.figure(figsize=(10, 5))
+    plt.plot(epochs, loss, marker='o', label='MLM Loss')
+    plt.title('MLM Loss per Epoch')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+    # Plotting accuracy
+    plt.figure(figsize=(10, 5))
+    plt.plot(epochs, accuracy, marker='o', color='r', label='MLM Accuracy')
+    plt.title('MLM Accuracy per Epoch')
+    plt.xlabel('Epoch')
+    plt.ylabel('Accuracy')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+    
+    
 def train(args, model, optimizer, scheduler, validation_dataloader, train_dataloader):
     # assert args.pregenerated_data.is_file(), \
     #     "--pregenerated_data should point to the folder of files made by pregenerate_training_data.py!"
@@ -314,10 +347,7 @@ def train(args, model, optimizer, scheduler, validation_dataloader, train_datalo
                 optimizer.zero_grad()
                 
                 # step 2: compute the output
-                outputs = model(input_ids=input_ids, attention_mask=input_mask, labels=lm_label_ids) # outputs: loss, logits, hidden_states, attentions
-                
-                print('\n Output LOSS SHAPE: ', outputs.loss.shape)
-                print('\n Output LOGITS SHAPE: ', outputs.loss.shape)
+                outputs = model(input_ids, attention_mask=input_mask, labels=lm_label_ids) # outputs: loss, logits, hidden_states, attentions
                 
                 # step 3: compute the loss
                 loss = outputs.loss
@@ -330,7 +360,6 @@ def train(args, model, optimizer, scheduler, validation_dataloader, train_datalo
                 
                 # step 4: use loss to produce gradients 
                 loss.backward()
-                
                 
                 # step 5: use optimizer to take gradient step
                 if (batch_index + 1) % args.gradient_accumulation_steps == 0:
@@ -369,6 +398,7 @@ def train(args, model, optimizer, scheduler, validation_dataloader, train_datalo
                 loss_dict["epoch"].append(epoch)
                 loss_dict["batch_id"].append(batch_index)
                 loss_dict["mlm_loss"].append(total_train_loss)
+                loss_dict["mlm_acc"].append(total_train_accuracy)
                 progress.update(1)
                 # print top 10 masked tokens
                 # print(tokenizer.convert_ids_to_tokens(torch.topk(outputs.logits[0, idx, :], 10).indices))
@@ -420,6 +450,9 @@ def train(args, model, optimizer, scheduler, validation_dataloader, train_datalo
             # tb.add_scalar('validation loss', val_loss, epoch)
             # tb.add_scalar('validation accucracy', val_accuracy, epoch)
             # print("Average validiation loss: {:} avg val accuracy {:} : ".format(val_loss, val_accuracy))
+    
+    # Visualize loss and accuracy
+    visualize_acc(loss_dict)
     
     # Save a trained model
     if n_gpu > 1 and torch.distributed.get_rank() == 0 or n_gpu <=1:
