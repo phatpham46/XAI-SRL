@@ -151,15 +151,12 @@ def is_POS_match(logits, input_ids, lm_label_ids):
     # Extract the logits for the masked position
     masked_logits = logits[0, masked_idx]
     print("MASKED LOGITS: ", masked_logits) # torch.Size([28996])
-    # Apply softmax to get probabilities
-    probabilities = torch.nn.functional.softmax(masked_logits, dim=-1)
-
-    # Get the token with the highest probability (predicted token)
-    predicted_token_id = torch.argmax(probabilities).item()
-    predicted_token = tokenizer.convert_ids_to_tokens([predicted_token_id])[0]
-
+  
+    # Get the index of the predicted token
+    predicted_token_id = torch.argmax(masked_logits).item()
+    
     # Replace the [MASK] token with the predicted token in the original text
-    result_text = text.replace('[MASK]', predicted_token) 
+    result_text = text.replace('[MASK]', tokenizer.convert_ids_to_tokens([predicted_token_id])[0]) 
     print("RESULT TEXT: ", result_text)
     
     # get pos tag of logits
@@ -170,31 +167,32 @@ def is_POS_match(logits, input_ids, lm_label_ids):
 def custom_loss(input_ids, logits, labels):
   
     # Cross-entropy term
-    cross_entropy_term = F.cross_entropy(logits, labels, reduction='none')
+    cross_entropy_term = F.cross_entropy(logits.view(-1, tokenizer.vocab_size), labels.view(-1))
     print("Cross entropy term shape: ", cross_entropy_term.shape)      ##Cross entropy term shape:  torch.Size([2720])
-    logits_shape = (32, 85, VOCAB_SIZE)
-    logits_tensor = logits.view(*logits_shape)
+    # logits_shape = (32, 85, VOCAB_SIZE)
+    # logits_tensor = logits.view(*logits_shape)
     
-    labels_shape = (32, 85)
-    labels_tensor  = labels.view(*labels_shape)
+    # labels_shape = (32, 85)
+    # labels_tensor = labels.view(*labels_shape)
     
     
     # Custom matching term
     matching_term_lst = []
-    for logit, input_id, label in zip(logits_tensor, input_ids, labels_tensor):
-       
+    for logit, input_id, label in zip(logits, input_ids, labels):
+        print("shape logit ", logit.shape) 
+        print("shape input_id ", input_id.shape)
+        print("shape label ", label.shape)
         matching_term = is_POS_match(logits=logit, input_ids=input_id, lm_label_ids=label)
         print("Matching term: ", matching_term) 
         matching_term_lst.append(matching_term) 
-    # hay mình thử sửa cái POS cho cái batch luôn kh, tại cái logit với cái label truyền vô là cái batch á
-    # mà t sợ nhiều khi mình reshape sai nên nó tính sai 
+        
+        
     matching_term = torch.tensor(matching_term_lst)
     # Combine terms
     loss = 0.5 * cross_entropy_term + (1 - matching_term)
     return loss
 
 
-    
 def eval_model(args, model, validation_dataloader):
     if args.local_rank == -1 or args.no_cuda:
         device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
@@ -350,8 +348,8 @@ def train(args, model, optimizer, scheduler, validation_dataloader, train_datalo
                 outputs = model(input_ids, attention_mask=input_mask, labels=lm_label_ids) # outputs: loss, logits, hidden_states, attentions
                 
                 # step 3: compute the loss
-                loss = outputs.loss
-                # loss = custom_loss(input_ids=input_ids, logits=outputs.logits.view(-1, num_classes), labels=lm_label_ids.view(-1))
+                # loss = outputs.loss
+                loss = custom_loss(input_ids=input_ids, logits=outputs.logits, labels=lm_label_ids)
                 if n_gpu > 1:
                     loss = loss.mean() # mean() to average on multi-gpu.
                 if args.gradient_accumulation_steps > 1:
@@ -535,9 +533,9 @@ def pretrain_on_treatment(args):
     train(args, model, optimizer, scheduler, validation_dataloader, train_dataloader)
     
     
-    # Evaluate model
-    test_loss, test_accuracy = eval_model(args, model, test_dataloader)
-    print(f'Test loss: {test_loss} Test accuracy: {test_accuracy}')
+    # # Evaluate model
+    # test_loss, test_accuracy = eval_model(args, model, test_dataloader)
+    # print(f'Test loss: {test_loss} Test accuracy: {test_accuracy}')
 
 
 
