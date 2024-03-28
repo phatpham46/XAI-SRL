@@ -1,196 +1,118 @@
-from argparse import ArgumentParser
 import math
-from pathlib import Path
 import time
 import torch
-import logging
-import json
-import random
-import numpy as np
-import pandas as pd
-from collections import namedtuple, defaultdict
-from tempfile import TemporaryDirectory
-from sklearn.metrics import accuracy_score
-from babel.dates import format_time
-import torch.nn as nn
-import torch
 import sys
-from scipy.special import softmax
-import matplotlib.pyplot as plt
-sys.path.insert(1, '../')
-
-# sys.path.insert(1, '/content/SRLPredictionEasel')
-from embedding import read_data
-from torch.utils.data import DataLoader, Dataset, RandomSampler, SequentialSampler
-from torch.utils.data.distributed import DistributedSampler 
-from sklearn.multioutput import MultiOutputClassifier
-from tqdm import tqdm
-# from bert_mlm_finetune import BertForMLMPreTraining 
-from transformers import BertTokenizer, BertConfig, AdamW, get_linear_schedule_with_warmup, BertForMaskedLM 
-from utils_mlm import count_num_cpu_gpu
-from prepared_for_mlm import data_split
-import spacy
+import logging
 import pathlib
 import tensorflow as tf
 import torch.nn.functional as F
+import matplotlib.pyplot as plt
+
+
+from tqdm import tqdm
+from pathlib import Path
+from collections import defaultdict
+from argparse import ArgumentParser
+from babel.dates import format_time
+from mlm_utils.custom_dataset import CustomDataset
+# sys.path.insert(1, '/content/SRLPredictionEasel')
 from torch.utils.tensorboard import SummaryWriter
+from torch.utils.data.distributed import DistributedSampler 
+from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
+from transformers import AdamW, get_linear_schedule_with_warmup, BertForMaskedLM 
+from mlm_utils.preprocess_functions import get_pos_tag_word, get_key
+from mlm_utils.model_utils import BATCH_SIZE, EPOCHS, BIOBERT_MODEL, BERT_PRETRAIN_MODEL, TOKENIZER, NUM_CPU
+from prepared_for_mlm import get_word_list, data_split, get_tokens_for_words, encode_text, decode_token
+
+
+sys.path.insert(1, '../')
 tb = SummaryWriter()
 
-nlp = spacy.load("en_core_web_sm")
-tokenizer = BertTokenizer.from_pretrained("dmis-lab/biobert-base-cased-v1.2", do_lower_case=True)
-
-MLM_IGNORE_LABEL_IDX = -1
-VOCAB_SIZE = 28996 
-BATCH_SIZE = 32
-EPOCHS = 2
-MAX_SEQ_LEN = 85
-NUM_CPU = count_num_cpu_gpu()[0]
-
-class PregeneratedDataset(Dataset):
-    def __init__(self, training_path, file_name, tokenizer, reduce_memory=False):
-        self.vocab = tokenizer.vocab
-        self.tokenizer = tokenizer
-        # self.epoch = epoch
-        # self.data_epoch = epoch % num_data_epochs
-        
-        # train_file = training_path / "train_mlm.json"
-        # assert train_file.is_file() 
-        # data_list = []
-        # with open(train_file) as f:
-        #     for line in f:
-        #         data = json.loads(line)
-        #         data_list.append(data)
-        # # num_samples = metrics['num_training_examples']
-        # train_df = pd.DataFrame(data_list)
-        
-        train_df = self.read_df(training_path, file_name)
-
-        num_samples = len(train_df)
-        seq_len = MAX_SEQ_LEN
-        
-        self.temp_dir = None
-        self.working_dir = None
-        if reduce_memory:
-            print("reduce memory")
-            self.temp_dir = TemporaryDirectory()
-            self.working_dir = Path(self.temp_dir.name)
-            self.input_ids = np.memmap(filename=self.working_dir/'input_ids.memmap',
-                                  mode='w+', dtype=np.int32, shape=(num_samples, seq_len))
-            self.input_masks = np.memmap(filename=self.working_dir/'input_masks.memmap',
-                                    shape=(num_samples, seq_len), mode='w+', dtype=np.bool)
-            self.lm_label_ids = np.memmap(filename=self.working_dir/'lm_label_ids.memmap',
-                                     shape=(num_samples, seq_len), mode='w+', dtype=np.int32)
-            
-        else:
-            self.input_ids = np.zeros(shape=(num_samples, seq_len), dtype=np.int32)
-            self.input_masks = np.zeros(shape=(num_samples, seq_len), dtype=np.bool_)
-            self.lm_label_ids = np.full(shape=(num_samples, seq_len), dtype=np.int32, fill_value=MLM_IGNORE_LABEL_IDX)
-        
-        
-        self.num_samples = num_samples
-        self.seq_len = seq_len
-        self.input_ids = train_df['token_id']
-        self.input_masks = train_df['attention_mask']
-        self.lm_label_ids = train_df['labels']
-        
-    def __len__(self):
-        return len(self.input_ids)
-
-    def __getitem__(self, item):
-        return (torch.tensor(np.array(self.input_ids[item]), dtype = torch.int64),
-                torch.tensor(np.array(self.input_masks[item]), dtype = torch.int64),
-                torch.tensor(np.array(self.lm_label_ids[item]), dtype = torch.int64))
-
-    def read_df(self, training_path, file_name):
-        train_file = training_path / file_name
-       
-        # assert train_file.is_file() 
-        data_list = []
-        with open(train_file) as f:
-            for line in f:
-                data = json.loads(line)
-                data_list.append(data)
-        
-        df = pd.DataFrame(data_list)
-        return df
-def get_pos_tag(text, index):
-    # Process the text with spaCy
-    doc = nlp(text)
-
-    # Check if the index is within the bounds
-    if index < 0 or index >= len(doc):
-       return "Index out of bounds"
-
-    # Get the POS tag for the word at the specified index
-    pos_tag = doc[index].pos_
-    return pos_tag
 
 
-def is_POS_match(logits, input_ids, lm_label_ids):
+def is_POS_match(b_input_id, b_logit_id, b_label_id, b_count_word):
     '''
     Function to check if the POS tag of the masked token in the logits is the same as the POS tag of the masked token in the original text.
     Note: This function assumes that the logits are of shape # ([85, 28996]) 
     lm_label_ids: shape (batch_size, sequence_length)
     '''
+    '''cho 1 batch'''
     
-    origin_input_id = input_ids.clone() # Origin input id:  torch.Size([85])
-   
-    # Find the index of the masked token from lm_label_ids
-    masked_idx = torch.where(lm_label_ids != -100)[0]
-    masked_idx_input = torch.where(input_ids == tokenizer.mask_token_id)[0]
-   
-    origin_input_id[masked_idx_input] = lm_label_ids[masked_idx] 
+    b_matching_term = []
+    for idx_sample in range(b_input_id.shape[0]):
+        
+        input_id = b_input_id[idx_sample]
+        logit_id = b_logit_id[idx_sample]
+        label_id = b_label_id[idx_sample]
+        count_word = b_count_word[idx_sample]
+        
+        origin_input_id = input_id.clone()
+        pred_id = input_id.clone() 
+        
+        # Find the index of the masked token from lm_label_ids
+        mask_index = torch.where(label_id != -100)[0]
+        masked_idx_input = torch.where(input_id == TOKENIZER.mask_token_id)[0]
+        
+        # make sure masked_idx_input and mask_index are the same using assert
+        assert torch.equal(mask_index, masked_idx_input), "Masked index and label index are not the same."
+        origin_input_id[masked_idx_input] = label_id[mask_index] 
+        
+        
+        # get pos tag of origin text
+        origin_text = decode_token(origin_input_id, skip_special_tokens=True) 
+        
+        word_lst = get_word_list(origin_text)
+        
+        encode_sample = encode_text(' '.join(word_lst))
+                
+        word_dict = get_tokens_for_words(
+            word_lst, 
+            encode_sample['input_ids'], 
+            encode_sample['offset_mapping'][0])
+        
+        # Get key for the masked token
+        print("origin sentence: ", decode_token(origin_input_id, skip_special_tokens=True))
+        print("MASKED WORD", decode_token(origin_input_id[mask_index]))
+        print("WORD DICT: ", word_dict)
+        masked_word = get_key(word_dict, origin_input_id[mask_index], count_word)
+        
+        pos_tag_origin = get_pos_tag_word(masked_word, origin_text)
+        print("MASKED WORD: ", masked_word, pos_tag_origin)         
+        
+        pred = [torch.argmax(logit_id[0][i]).item() for i in mask_index]
     
-    # get pos tag of origin text
-    text = tokenizer.decode(input_ids)
-    origin_text = tokenizer.decode(origin_input_id) 
-    print("ORIGIN TEXT: ", origin_text)
-    pos_tag_origin = get_pos_tag(origin_text, masked_idx_input)
-    print("POS TAG ORIGIN: ", pos_tag_origin)
-   
-    # Extract the logits for the masked position
-    masked_logits = logits[0, masked_idx]
-    print("MASKED LOGITS: ", masked_logits) # torch.Size([28996])
-  
-    # Get the index of the predicted token
-    predicted_token_id = torch.argmax(masked_logits).item()
-    
-    # Replace the [MASK] token with the predicted token in the original text
-    result_text = text.replace('[MASK]', tokenizer.convert_ids_to_tokens([predicted_token_id])[0]) 
-    print("RESULT TEXT: ", result_text)
-    
-    # get pos tag of logits
-    logits_tag = get_pos_tag(result_text, masked_idx)
-    print("LOGITS TAGS: ", logits_tag)
-    return pos_tag_origin == logits_tag    
+        # Get the index of the predicted token
+        # replace the index of the masked token with the list of predicted tokens
+        for i in mask_index:
+            pred_id[i] = pred[i - mask_index[0]]
+            
+        print("result sentence: ", decode_token(pred_id, skip_special_tokens=True))
+        print("PRED WORD: ", decode_token(pred))
+        logits_tag = get_pos_tag_word(decode_token(pred), decode_token(pred_id, skip_special_tokens=True) )
+        
+        print("POS TAG PRED WORD: ", logits_tag)
 
-def custom_loss(input_ids, logits, labels):
-  
+        matching_term = (pos_tag_origin == logits_tag)
+        
+        matching_term_tensor = torch.where(matching_term == torch.tensor(True), torch.tensor(1.0), torch.tensor(0.0))
+        
+        b_matching_term.append(matching_term_tensor)
+        
+    return b_matching_term
+
+
+def custom_loss(b_logit_id, b_input_id, b_label_id, b_count_word):
+   
     # Cross-entropy term
-    cross_entropy_term = F.cross_entropy(logits.view(-1, tokenizer.vocab_size), labels.view(-1))
-    print("Cross entropy term shape: ", cross_entropy_term.shape)      ##Cross entropy term shape:  torch.Size([2720])
-    # logits_shape = (32, 85, VOCAB_SIZE)
-    # logits_tensor = logits.view(*logits_shape)
-    
-    # labels_shape = (32, 85)
-    # labels_tensor = labels.view(*labels_shape)
-    
-    
+    b_cross_entropy_term = F.cross_entropy(b_logit_id.view(-1, TOKENIZER.vocab_size), b_label_id.view(-1))
+      
     # Custom matching term
-    matching_term_lst = []
-    for logit, input_id, label in zip(logits, input_ids, labels):
-        print("shape logit ", logit.shape) 
-        print("shape input_id ", input_id.shape)
-        print("shape label ", label.shape)
-        matching_term = is_POS_match(logits=logit, input_ids=input_id, lm_label_ids=label)
-        print("Matching term: ", matching_term) 
-        matching_term_lst.append(matching_term) 
-        
-        
-    matching_term = torch.tensor(matching_term_lst)
+    b_matching_term = is_POS_match(b_input_id, b_logit_id, b_label_id, b_count_word)
+
+
     # Combine terms
-    loss = 0.5 * cross_entropy_term + (1 - matching_term)
-    return loss
+    b_loss = 0.5 * b_cross_entropy_term + (1 - b_matching_term)
+    return b_loss
 
 
 def eval_model(args, model, validation_dataloader):
@@ -274,11 +196,11 @@ def visualize_acc(loss_dict):
     plt.grid(True)
     plt.show()
     
-    
-def train(args, model, optimizer, scheduler, validation_dataloader, train_dataloader):
-    # assert args.pregenerated_data.is_file(), \
-    #     "--pregenerated_data should point to the folder of files made by pregenerate_training_data.py!"
 
+    
+def train(args, model, optimizer, scheduler, val_dataset, train_dataset):
+   
+   
     if args.local_rank == -1 or args.no_cuda:
         device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
         n_gpu = torch.cuda.device_count()
@@ -310,7 +232,7 @@ def train(args, model, optimizer, scheduler, validation_dataloader, train_datalo
     # print("Average validiation loss: {:} avg val accuracy {:} : ".format(val_loss, val_accuracy))
     
     # Prepare model
-    model = BertForMaskedLM.from_pretrained(args.bert_model)
+    model = BIOBERT_MODEL
     model.to(device)
     
     if n_gpu > 1:
@@ -334,27 +256,32 @@ def train(args, model, optimizer, scheduler, validation_dataloader, train_datalo
         model.train()
         print('put model in train mode')
 
+        train_dataloader = generate_batches(
+            local_rank= args.local_rank, 
+            dataset=train_dataset, 
+            batch_size=args.train_batch_size, 
+            device=device)
+        
         with tqdm(total=total_steps,position=epoch, desc=f"Epoch {epoch}") as progress:
             for batch_index, batch in enumerate(train_dataloader):
                 
                 batch = tuple(t.to(device) for t in batch)  
-                input_ids, input_mask, lm_label_ids = batch 
+                b_mask_input_id, b_attention_mask,b_token_type_id, b_label_id, b_count_word = batch 
                 
-                # step 1: zero the gradient     
-                # model.zero_grad() 
+                # step 1: zero the gradient  
                 optimizer.zero_grad()
                 
                 # step 2: compute the output
-                outputs = model(input_ids, attention_mask=input_mask, labels=lm_label_ids) # outputs: loss, logits, hidden_states, attentions
+                outputs = model(b_mask_input_id, attention_mask=b_attention_mask,token_type_ids = b_token_type_id, labels=b_label_id) 
+                # outputs: loss, logits, hidden_states, attentions
                 
                 # step 3: compute the loss
                 # loss = outputs.loss
-                loss = custom_loss(input_ids=input_ids, logits=outputs.logits, labels=lm_label_ids)
+                loss = custom_loss(b_logit_id=outputs.logits,b_input_id=b_mask_input_id, b_label_id=b_label_id, b_count_word=b_count_word)
                 if n_gpu > 1:
                     loss = loss.mean() # mean() to average on multi-gpu.
                 if args.gradient_accumulation_steps > 1:
                     loss = loss / args.gradient_accumulation_steps
-                
                 
                 # step 4: use loss to produce gradients 
                 loss.backward()
@@ -369,8 +296,8 @@ def train(args, model, optimizer, scheduler, validation_dataloader, train_datalo
                 # Compute the accuracy
                 logits = outputs.logits
                 
-                m.update_state(lm_label_ids.cpu(), torch.argmax(logits, dim=-1).cpu())
-                m_f1.update_state(lm_label_ids.cpu(), torch.argmax(logits, dim=-1).cpu())
+                m.update_state(b_label_id.cpu(), torch.argmax(logits, dim=-1).cpu())
+                m_f1.update_state(b_label_id.cpu(), torch.argmax(logits, dim=-1).cpu())
                 
                 accuracy_batch = m.result().numpy()
                 
@@ -398,37 +325,7 @@ def train(args, model, optimizer, scheduler, validation_dataloader, train_datalo
                 loss_dict["mlm_loss"].append(total_train_loss)
                 loss_dict["mlm_acc"].append(total_train_accuracy)
                 progress.update(1)
-                # print top 10 masked tokens
-                # print(tokenizer.convert_ids_to_tokens(torch.topk(outputs.logits[0, idx, :], 10).indices))
-                #print("Input id shape: ", input_ids.shape)  
-                #print("Logits shape: ", outputs.logits.shape) # ([32, 85, 28996])  input (N=batch_sz, C=nb_of_class)
-                # logits (torch.FloatTensor of shape (batch_size, sequence_length, config.vocab_size)) 
-                #print("Target shape: ", lm_label_ids.shape)  # torch.Size([32, 85]) Target:  shape (), (N)
-                
-                # num_classes = outputs.logits[0].size(1) # Output:  shape (), (N)
-                # #print("Num classes ", num_classes) # 28996
-                
-                
-                # loss = custom_loss(input_ids=input_ids, logits=outputs.logits.view(-1, num_classes), labels=lm_label_ids.view(-1))
-                
-                # #loss = outputs[0]
-                
-                # if args.fp16:
-                #     optimizer.backward(loss)
-                # else:
-                #     loss.backward()
-                # total_train_loss += loss.item()
-                # nb_tr_examples += input_ids.size(0)
-                # nb_tr_steps += 1
-                # pbar.update(1)
-                # mean_loss = total_train_loss * args.gradient_accumulation_steps / nb_tr_steps
-                # pbar.set_postfix_str(f"Loss: {mean_loss:.5f}")
-                # if (step + 1) % args.gradient_accumulation_steps == 0:
-                #     optimizer.step()
-                #     scheduler.step()  # Update learning rate schedule
-                #     optimizer.zero_grad()
-                #     global_step += 1
-                
+               
             
             # Save a trained model
             if epoch < args.epochs and (n_gpu > 1 and torch.distributed.get_rank() == 0 or n_gpu <= 1):
@@ -460,52 +357,49 @@ def train(args, model, optimizer, scheduler, validation_dataloader, train_datalo
         # tokenizer.save_pretrained(args.output_dir)
         # df = pd.DataFrame.from_dict(loss_dict)
         # df.to_csv(args.output_dir/"losses.csv")
-def prepare_data(args):
-    
-    # Prepare validation dataloader
-    val_dataset = PregeneratedDataset(training_path=args.pregenerated_data, file_name='dev_mlm.json', tokenizer=tokenizer,  reduce_memory=args.reduce_memory)
-    
-    validation_dataloader = DataLoader(
-        val_dataset, 
-        sampler=SequentialSampler(val_dataset), 
-        batch_size=args.train_batch_size, 
-        num_workers=NUM_CPU)
 
-    
-    # Prepare train dataloader
-    epoch_dataset = PregeneratedDataset(training_path=args.pregenerated_data, file_name='train_mlm.json', tokenizer=tokenizer,
-                                            reduce_memory=args.reduce_memory)
-    if args.local_rank == -1:
-        train_sampler = RandomSampler(epoch_dataset)
+def get_sampler(local_rank, dataset):
+    if local_rank == -1:
+        return RandomSampler(dataset)
     else:
-        train_sampler = DistributedSampler(epoch_dataset)
+        return SequentialSampler(dataset)
     
-    train_dataloader = DataLoader(epoch_dataset, sampler=train_sampler, batch_size=args.train_batch_size, num_workers=NUM_CPU)
-    
-    
-    # Prepare test dataloader
-    test_dataset = PregeneratedDataset(training_path=args.pregenerated_data, file_name='test_mlm.json', tokenizer=tokenizer,  reduce_memory=args.reduce_memory)
-    
-    test_data_loader = DataLoader(
-        test_dataset, 
-        sampler=SequentialSampler(test_dataset), 
-        batch_size=args.train_batch_size, 
-        num_workers=NUM_CPU)
-    
-    return validation_dataloader, train_dataloader, test_data_loader
 
-
-def pretrain_on_treatment(args):
-    # Prepare model
-    model = BertForMaskedLM.from_pretrained(args.bert_model)
+def generate_batches(local_rank, dataset, batch_size,
+    drop_last=True, device="cpu"):
+    """
+    A generator function which wraps the PyTorch DataLoader. It will
+    ensure each tensor is on the write device location.
+    """
+    dataloader = DataLoader(
+        dataset=dataset, 
+        sampler=get_sampler(local_rank, dataset),
+        batch_size=batch_size,
+        drop_last=drop_last,
+        num_workers=NUM_CPU)  
     
+    # for data_dict in dataloader:
+    #     print(data_dict)
+    #     out_data_dict = {}
+    #     for name, tensor in data_dict.items():
+    #         out_data_dict[name] = data_dict[name].to(device)
+    #     yield out_data_dict
+    return dataloader
+
+def pretrain_on_treatment(args, model):
+   
     # Prepare data
-    validation_dataloader, train_dataloader, test_dataloader = prepare_data(args)
- 
-    # Prepare parameters
-    # args.train_batch_size = args.train_batch_size // args.gradient_accumulation_steps
     
-    # num_train_optimization_steps = math.ceil(args.num_samples/args.train_batch_size) // args.gradient_accumulation_steps
+    train_dataset = CustomDataset(
+        data_path=args.pregenerated_data, 
+        file_name='train_mlm.json')
+    
+    validation_dataset = CustomDataset(
+        data_path=args.pregenerated_data,
+        file_name='dev_mlm.json')
+    
+    
+    # Prepare parameters
     num_train_steps = math.ceil(args.num_samples / args.train_batch_size) * args.epochs // args.gradient_accumulation_steps
     
     total_steps = int(num_train_steps * args.gradient_accumulation_steps / args.epochs)
@@ -530,7 +424,7 @@ def pretrain_on_treatment(args):
                                                 num_training_steps=total_steps)
     
     # Train model
-    train(args, model, optimizer, scheduler, validation_dataloader, train_dataloader)
+    train(args, model, optimizer, scheduler, validation_dataset, train_dataset)
     
     
     # # Evaluate model
@@ -543,12 +437,12 @@ def main():
     parser = ArgumentParser()
     parser.add_argument('--pregenerated_data', type=Path, required=False)
     parser.add_argument("--output_dir", type=Path, required=False)
-    parser.add_argument("--bert_model", type=str, required=False, default='dmis-lab/biobert-base-cased-v1.2',
+    parser.add_argument("--bert_model", type=str, required=False, default=BERT_PRETRAIN_MODEL,
                         help="Bert pre-trained model")
     parser.add_argument("--do_lower_case", action="store_true")
     parser.add_argument("--reduce_memory", action="store_true",
                         help="Store training data as on-disc memmaps to massively reduce memory usage")
-    parser.add_argument("--num_samples", type=int, required=False, default=39921)
+    parser.add_argument("--num_samples", type=int, required=False, default=51823)
     parser.add_argument("--epochs", type=int, default=EPOCHS, help="Number of epochs to train for")
     parser.add_argument("--local_rank",
                         type=int,
@@ -592,10 +486,9 @@ def main():
     # args.output_dir = Path('/content/drive/MyDrive/ColabNotebooks/mlm_finetune_output')/ 'model'
     args.output_dir = Path('mlm_finetune_output') / "model"
     # args.pregenerated_data = pathlib.Path('/content/drive/MyDrive/ColabNotebooks/mlm_prepare_data')
-    args.pregenerated_data = pathlib.Path('mlm_prepared_data')
+    args.pregenerated_data = pathlib.Path('mlm_prepared_data_2')
     
-    # data_split('mlm_output', 'mlm_prepared_data', tokenizer)[0]
-    pretrain_on_treatment(args)
+    pretrain_on_treatment(args, BIOBERT_MODEL)
    
 
 if __name__ == '__main__':

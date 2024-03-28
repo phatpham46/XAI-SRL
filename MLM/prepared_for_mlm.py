@@ -1,24 +1,24 @@
-import copy
+
 import os
 import re
-import numpy as np
-import pandas as pd
-import json
-from ast import literal_eval
-from sklearn.model_selection import train_test_split
-import spacy
-from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
-from transformers import BertForMaskedLM, BertTokenizerFast
-from pathlib import Path
-from tqdm import tqdm, trange
 import torch
+import spacy
+import pandas as pd
+from tqdm import tqdm
+from multiprocessing import Pool
+from sklearn.model_selection import train_test_split
+from mlm_utils.preprocess_functions import check_data_dir
+from mlm_utils.model_utils import MLM_IGNORE_LABEL_IDX, VOCAB_SIZE, BATCH_SIZE, EPOCHS, MAX_SEQ_LEN, BERT_PRETRAIN_MODEL, NLP, TOKENIZER
+
+
 MAX_SEQ_LEN = 85
+NUMBER_WORKERS = 5 
+BERT_PRETRAINED_MODEL = 'dmis-lab/biobert-base-cased-v1.2'
+
 VOCAB_SIZE = 28996 
 wwm_probability = 0.1
-import random
-# Load the English language model
-nlp = spacy.load("en_core_web_sm")
-      
+
+   
 def get_files(dir):
     files = []
     for path in os.listdir(dir):
@@ -26,6 +26,21 @@ def get_files(dir):
             files.append(path)
     return files
 
+def decode_token(input_ids, skip_special_tokens=False):
+    return TOKENIZER.decode(input_ids, skip_special_tokens=skip_special_tokens)
+
+def encode_text(text):
+    
+    return TOKENIZER.encode_plus(
+                    text,
+                    max_length=MAX_SEQ_LEN,
+                    padding='max_length', 
+                    truncation=True,  
+                    add_special_tokens = True,
+                    return_tensors="pt",  
+                    return_attention_mask = True,
+                    return_offsets_mapping=True  
+                )
 
 def convert_csv_to_tsv(readDir, writeDir):
     '''
@@ -52,7 +67,7 @@ def convert_csv_to_tsv(readDir, writeDir):
             ner_tags = ['O'] * len(words)
             
             for i in range(len(words)):
-                tokens = nlp(words[i])
+                tokens = NLP(words[i])
                 
                 if (tokens[0].lemma_.lower() == predicate):
                     words[i] = '#' + words[i]
@@ -94,7 +109,7 @@ def convert_csv_to_tsv(readDir, writeDir):
     nerW.close()
  
 def get_pos_tag(word, text):
-    doc = nlp(text)
+    doc = NLP(text)
     for token in doc:
         if token.text == word:
             return token.pos_
@@ -110,65 +125,75 @@ def get_tokens_for_words(words, input_ids, offsets):
     Output: 
         word_dict = {'The': [tensor(101), tensor(170), tensor(170)], 'capital': [tensor(1109), tensor(3007)], ....}
     '''
+    
+
     word_dict = {}
     current_word = ''
     token_list = []
     sentence = ' '.join(words)
+    except_tokens = [TOKENIZER.cls_token_id, TOKENIZER.sep_token_id, TOKENIZER.pad_token_id, TOKENIZER.unk_token_id]
     for j, (token, offset) in enumerate(zip(input_ids[0], offsets)):
        
         if offset[0] is not None:  # If the token is associated with a word in the original text
             
             start, end = offset
             original_word = sentence[start:end]
-            # original_word = tokenizer.decode(input_ids[j], skip_special_tokens=True)
+            # original_word = TOKENIZER.decode(input_ids[j], skip_special_tokens=True)
             if j > 0 and offset[0] == offsets[j - 1][1]:  # Check if the current word should be concatenated
                 current_word += original_word
                 token_list.append(token)
             else:
                 if current_word:
-                    if current_word in word_dict:
-                        word_dict[current_word].append(token_list)
-                    else:
-                        word_dict[current_word] = [token_list]
+                    word_dict[current_word] = [token_list]
                 current_word = original_word
                 token_list = [token]
 
     # Add the last word
     if current_word:
-        if current_word in word_dict:
-            word_dict[current_word].append(token_list)
-        else:
-            word_dict[current_word] = [token_list]
+        word_dict[current_word] = [token_list]
 
-    return {word: [item for sublist in tokens for item in sublist]  for word, tokens in word_dict.items() }
+    return {word: [item for sublist in tokens 
+                            for item in sublist 
+                                if item not in except_tokens ]  for word_idx, (word, tokens) in enumerate(word_dict.items()) }
 
-def mask_content_words(ids, word_dict, tokenizer):
+
+def mask_content_words(ids, word_dict):
+    '''
+    input:
+        ids: sample_id 
+        word_dict: {'The': [tensor(170)], 'capital': [tensor(1109), tensor(3007)], ....}
+    output:
+        masked_sentences: [tensor([  101,  1103, 175, 10555,  103,   103,   103,   102])
+        label_ids: [tensor(6468)], [tensor(1568), tensor(13892)]
+    '''
     labels = []
     masked_sentences = []
-    masked_indices = []
-    except_tokens = [tokenizer.cls_token_id, tokenizer.sep_token_id, tokenizer.pad_token_id, tokenizer.unk_token_id]
+    except_tokens = [TOKENIZER.cls_token_id, TOKENIZER.sep_token_id, TOKENIZER.pad_token_id, TOKENIZER.unk_token_id]
+    count_masked_words = []
     for (key, value) in word_dict.items():
-        masked_ids = ids.clone()
+        masked_ids = ids.clone() # torch.Size([1, 85])
         label = torch.full_like(masked_ids, fill_value=-100)
-        
+        count_masked_key = 0
         if get_pos_tag(key, ' '.join(word_dict.keys())) in ['NOUN', 'VERB', 'ADJ', 'ADV']:
-           
             masked_indice = torch.full_like(masked_ids, fill_value=0)
-            for idx_value in value:
-                if torch.isin(idx_value, masked_ids) and idx_value not in except_tokens:
-                    masked_ids[masked_ids == idx_value.clone().detach()] = tokenizer.mask_token_id
-                    # get the index of the masked token
-                    masked_indice[masked_ids == tokenizer.mask_token_id] = 1
+            for i in range(len(masked_ids[0]) - len(value) + 1):
+                if torch.equal(torch.as_tensor(masked_ids[0][i:i+len(value)]).clone().detach(), torch.as_tensor(value).clone().detach()):
+                    masked_ids[0][i:i+len(value)]= TOKENIZER.mask_token_id
+                    masked_indice[masked_ids == TOKENIZER.mask_token_id] = 1
+                    count_masked_key += 1
+             
                     
             for idx, mask in enumerate(masked_indice[0]):
                 if mask == 1:
                     label[0][idx] = ids[0][idx]
+                         
             masked_sentences.append(masked_ids)
             labels.append(label)
-            masked_indices.append(masked_indice)
-    return masked_sentences, labels, masked_indices
+            count_masked_words.append(count_masked_key)
+            
+    return masked_sentences, labels, count_masked_words
 
-def masking_sentence_word(words, input_ids, offsets, tokenizer):
+def masking_sentence_word(words, input_ids, offsets):
     '''
     Input: 
         words = ['The', 'capital', 'of', 'France', 'is', 'Paris', '.']
@@ -180,101 +205,100 @@ def masking_sentence_word(words, input_ids, offsets, tokenizer):
     word_dict = get_tokens_for_words(words, input_ids, offsets)
    
     # masked the tokens if the word is the content word
-    masked_sentences, label_ids, masked_indices = mask_content_words(input_ids, word_dict, tokenizer)
+    masked_sentences, label_ids, count_masked_words = mask_content_words(input_ids, word_dict)
     
-    return masked_sentences, label_ids, masked_indices
-def tokenize_csv_to_json(dataDir, wriDir, tokenizer):
+    return masked_sentences, label_ids, count_masked_words
+
+
+
+def get_word_list(text):
+    doc = NLP(text)
+    word_lst = [word.text for word in [token for token in doc]]
+    return word_lst
+
+def tokenize_csv_to_json(dataDir, wriDir):
     '''
-    Tokenize_csv_to_json('./interim/', './mlm_output/', tokenizer)
+    Tokenize_csv_to_json('./interim/', './mlm_output/')
     Function to create data in MLM format.
     Input file: csv with columns ['id', 'source ,'text', 'arguments']
     Output file: json with columns ['uid', 'token_id', 'mask', 'pos']
     
     '''
     
-    # Read train file
-    if not os.path.exists(dataDir):
-        assert False, "Data directory does not exist"
+    # check if the data directory exists
+    check_data_dir(dataDir, auto_create=False)
+    check_data_dir(wriDir, auto_create=True)
+    
     
     files = get_files(dataDir)
-    
-    if not os.path.exists(wriDir):
-        os.makedirs(wriDir)
-    
     for file in files:
-       
+        
         features = []
         writeFile = os.path.join(wriDir, 'mlm_{}.csv'.format(file.split('.')[0]))
         
         data = pd.read_csv(os.path.join(dataDir, file))
         print("Processing file: ", file)
-       
+    
         with tqdm(total=len(data['text'])) as pbar:
-            for idx, sample in enumerate(data['text']) :    
+            for sample in data['text']:    
             
-                # Get the POS tag for each word in the text
-                doc = nlp(sample)
-                words_str = [word.text for word in [token for token in doc]]
-
+                # Get word list from sample
+                word_lst = get_word_list(sample)
+                
                 # Encode the sentence
-                tokenized_sentence = tokenizer.encode_plus(
-                    ' '.join(words_str),
-                    max_length=MAX_SEQ_LEN,
-                    padding='max_length', 
-                    truncation=True,  
-                    add_special_tokens = True,
-                    return_tensors="pt",  
-                    return_attention_mask = True,
-                    return_offsets_mapping=True  
-                )
+                tokenized_sentence = encode_text(' '.join(word_lst))
                 
                 # Mask the content words
-                masked_sens, label_ids, masked_indices = masking_sentence_word(
-                    words_str, 
+                masked_sens, label_ids, count_masked_words = masking_sentence_word(
+                    word_lst, 
                     tokenized_sentence['input_ids'], 
-                    tokenized_sentence['offset_mapping'][0],
-                    tokenizer)
+                    tokenized_sentence['offset_mapping'][0]
+                    )
+                
                 
                 # Create a feature for each masked sentence
-                for mask, label in zip(masked_sens, label_ids):
+                for mask, label, count in zip(masked_sens, label_ids, count_masked_words):
                     assert len(mask[0]) == MAX_SEQ_LEN, "Mismatch between processed tokens and labels"
                     
                     feature = {
                         'token_id': mask[0].numpy().tolist(), 
                         'attention_mask': tokenized_sentence['attention_mask'][0].numpy().tolist(),  
                         'token_type_ids': tokenized_sentence['token_type_ids'][0].numpy().tolist(), 
-                        'labels': label[0].numpy().tolist()}
+                        'labels': label[0].numpy().tolist(),
+                        'count': count}
                 
                     features.append(feature)
+                
+                # Update the progress bar
                 pbar.update(1)
+            
             
             # Write to a CSV file
             df_feature = pd.DataFrame(features)
             df_feature.to_csv(writeFile, index = False)
-            
+           
 
 def data_split(dataDir, wriDir):
     
     '''
-    data_split('mlm_output', 'mlm_prepared_data', tokenizer)
+    data_split('mlm_output', 'mlm_prepared_data')
     Function to split data into train, dev, test (60, 20, 20) and merge to json files.
     '''
+    check_data_dir(dataDir, auto_create=False)
+    check_data_dir(wriDir, auto_create=True)   
+    
     files = get_files(dataDir)
-
     train_df = pd.DataFrame()
     dev_df = pd.DataFrame()
     test_df = pd.DataFrame()
-    
-    if not os.path.exists(wriDir):
-        os.makedirs(wriDir)
-        
+     
     for file in files:
        
         data = pd.read_csv(os.path.join(dataDir, file))    
         train, testt = train_test_split(data, test_size=0.4)
         dev, test = train_test_split(testt, test_size=0.5)
         
-        
+        # concatenate the data
         train_df = pd.concat([train_df, train], ignore_index=True)
         dev_df = pd.concat([dev_df, dev], ignore_index=True)
         test_df = pd.concat([test_df, test], ignore_index=True)
@@ -287,10 +311,6 @@ def data_split(dataDir, wriDir):
     
     return train_df, dev_df, test_df
 
-from multiprocessing import Pool
-EPOCHS = 5 
-NUMBER_WORKERS = 5 
-BERT_PRETRAINED_MODEL = 'dmis-lab/biobert-base-cased-v1.2'
 
 # def create_training_file(docs, epoch_num, output_dir):
 #     epoch_filename = output_dir / f"{BERT_PRETRAINED_MODEL}_epoch_{epoch_num}.json"
@@ -305,10 +325,10 @@ BERT_PRETRAINED_MODEL = 'dmis-lab/biobert-base-cased-v1.2'
 #     metrics_file = output_dir / f"{BERT_PRETRAINED_MODEL}_epoch_{epoch_num}_metrics.json"
 
 
-# def create_training_data(dataDir, wriDir, tokenizer):
+# def create_training_data(dataDir, wriDir):
 #     output_dir = Path(wriDir)
 #     output_dir.mkdir(exist_ok=True, parents=True)
-#     vocab_list = list(tokenizer.vocab.keys())    
+#     vocab_list = list(TOKENIZER.vocab.keys())    
 #     f = open(dataDir + '/train_mlm.json')
 #     docs = json.load(f)
 #     f.close()
@@ -321,10 +341,10 @@ BERT_PRETRAINED_MODEL = 'dmis-lab/biobert-base-cased-v1.2'
 #             create_training_file(docs, epoch, output_dir)
             
 def main():
-    tokenizer = BertTokenizerFast.from_pretrained('dmis-lab/biobert-base-cased-v1.2')
-    tokenize_csv_to_json('./interim/', './mlm_output/', tokenizer)
     
-    data_split('./mlm_output/', './mlm_prepared_data/')
+    tokenize_csv_to_json('./interim/', './mlm_output_2/')
+    
+    data_split('./mlm_output_2/', './mlm_prepared_data_2/')
     
 if __name__ == "__main__":
     main() 

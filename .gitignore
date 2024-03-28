@@ -12,7 +12,9 @@ MLM/interim/
 MLM/mlm_finetune_output/
 MLM/mlm_finetune_output_test/
 MLM/mlm_output/
+MLM/mlm_output_2/
 MLM/mlm_prepared_data/
+MLM/mlm_prepared_data_2/
 MLM/raw/
 
 
