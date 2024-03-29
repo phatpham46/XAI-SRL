@@ -20,7 +20,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data.distributed import DistributedSampler 
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from transformers import AdamW, get_linear_schedule_with_warmup, BertForMaskedLM 
-from mlm_utils.preprocess_functions import get_pos_tag_word, get_key
+from mlm_utils.preprocess_functions import get_pos_tag_word, get_key, get_heuristic_word
 from mlm_utils.model_utils import BATCH_SIZE, EPOCHS, BIOBERT_MODEL, BERT_PRETRAIN_MODEL, TOKENIZER, NUM_CPU
 from prepared_for_mlm import get_word_list, data_split, get_tokens_for_words, encode_text, decode_token
 
@@ -30,7 +30,8 @@ tb = SummaryWriter()
 
 
 
-def is_POS_match(b_input_id, b_logit_id, b_label_id, b_count_word):
+
+def is_POS_match(b_input_id, b_logit_id, b_label_id):
     '''
     Function to check if the POS tag of the masked token in the logits is the same as the POS tag of the masked token in the original text.
     Note: This function assumes that the logits are of shape # ([85, 28996]) 
@@ -44,7 +45,6 @@ def is_POS_match(b_input_id, b_logit_id, b_label_id, b_count_word):
         input_id = b_input_id[idx_sample]
         logit_id = b_logit_id[idx_sample]
         label_id = b_label_id[idx_sample]
-        count_word = b_count_word[idx_sample]
         
         origin_input_id = input_id.clone()
         pred_id = input_id.clone() 
@@ -70,29 +70,36 @@ def is_POS_match(b_input_id, b_logit_id, b_label_id, b_count_word):
             encode_sample['input_ids'], 
             encode_sample['offset_mapping'][0])
         
+        # print("WORD DICT: ", word_dict)
+        
         # Get key for the masked token
-        print("origin sentence: ", decode_token(origin_input_id, skip_special_tokens=True))
-        print("MASKED WORD", decode_token(origin_input_id[mask_index]))
-        print("WORD DICT: ", word_dict)
-        masked_word = get_key(word_dict, origin_input_id[mask_index], count_word)
+        # print("origin sentence: ", decode_token(origin_input_id, skip_special_tokens=True))
+        #print("MASKED WORD", decode_token(origin_input_id[mask_index]))
+        # masked_word = get_key(word_dict, origin_input_id[mask_index])
+        masked_word = decode_token(origin_input_id[mask_index])
         
         pos_tag_origin = get_pos_tag_word(masked_word, origin_text)
-        print("MASKED WORD: ", masked_word, pos_tag_origin)         
+        #print("MASKED WORD: ",  pos_tag_origin)         
         
-        pred = [torch.argmax(logit_id[0][i]).item() for i in mask_index]
+        pred = [torch.argmax(logit_id[i]).item() for i in mask_index]
+        # for i in range(len(pred)):
+        #     print("pred: ", decode_token(pred[i]),pred[i] )
     
         # Get the index of the predicted token
         # replace the index of the masked token with the list of predicted tokens
         for i in mask_index:
             pred_id[i] = pred[i - mask_index[0]]
             
-        print("result sentence: ", decode_token(pred_id, skip_special_tokens=True))
-        print("PRED WORD: ", decode_token(pred))
-        logits_tag = get_pos_tag_word(decode_token(pred), decode_token(pred_id, skip_special_tokens=True) )
+        # print("result sentence: ", decode_token(pred_id, skip_special_tokens=True))
+        # print("PRED WORD: ", decode_token(pred))
         
-        print("POS TAG PRED WORD: ", logits_tag)
+        
+        pos_tag_dict = get_pos_tag_word(decode_token(pred), decode_token(pred_id, skip_special_tokens=True) )
+        word, pos_tag = get_heuristic_word(pos_tag_dict )
+        
+        # print("POS TAG PRED WORD: ", word,  pos_tag)
 
-        matching_term = (pos_tag_origin == logits_tag)
+        matching_term = (pos_tag_origin == pos_tag)
         
         matching_term_tensor = torch.where(matching_term == torch.tensor(True), torch.tensor(1.0), torch.tensor(0.0))
         
@@ -101,18 +108,20 @@ def is_POS_match(b_input_id, b_logit_id, b_label_id, b_count_word):
     return b_matching_term
 
 
-def custom_loss(b_logit_id, b_input_id, b_label_id, b_count_word):
+def custom_loss(b_logit_id, b_input_id, b_label_id):
    
     # Cross-entropy term
-    b_cross_entropy_term = F.cross_entropy(b_logit_id.view(-1, TOKENIZER.vocab_size), b_label_id.view(-1))
+    b_cross_entropy_term = F.cross_entropy((1-b_logit_id).view(-1, TOKENIZER.vocab_size), b_label_id.view(-1), reduction='none')
       
+    print("SHAPE OF CROSS ENTROPY TERM: ", b_cross_entropy_term.shape) # 2720 = 32 * 85
     # Custom matching term
-    b_matching_term = is_POS_match(b_input_id, b_logit_id, b_label_id, b_count_word)
+    b_matching_term = is_POS_match(b_input_id, b_logit_id, b_label_id)
+    print("SHAPE OF matching TERM: ", len(b_matching_term)) 
 
 
     # Combine terms
-    b_loss = 0.5 * b_cross_entropy_term + (1 - b_matching_term)
-    return b_loss
+    b_loss = 0.5 * (b_cross_entropy_term) #+ (1 - b_matching_term))
+    return b_loss.mean()
 
 
 def eval_model(args, model, validation_dataloader):
@@ -266,7 +275,7 @@ def train(args, model, optimizer, scheduler, val_dataset, train_dataset):
             for batch_index, batch in enumerate(train_dataloader):
                 
                 batch = tuple(t.to(device) for t in batch)  
-                b_mask_input_id, b_attention_mask,b_token_type_id, b_label_id, b_count_word = batch 
+                b_mask_input_id, b_attention_mask,b_token_type_id, b_label_id = batch 
                 
                 # step 1: zero the gradient  
                 optimizer.zero_grad()
@@ -277,7 +286,7 @@ def train(args, model, optimizer, scheduler, val_dataset, train_dataset):
                 
                 # step 3: compute the loss
                 # loss = outputs.loss
-                loss = custom_loss(b_logit_id=outputs.logits,b_input_id=b_mask_input_id, b_label_id=b_label_id, b_count_word=b_count_word)
+                loss = custom_loss(b_logit_id=outputs.logits, b_input_id=b_mask_input_id, b_label_id=b_label_id)
                 if n_gpu > 1:
                     loss = loss.mean() # mean() to average on multi-gpu.
                 if args.gradient_accumulation_steps > 1:
@@ -486,7 +495,7 @@ def main():
     # args.output_dir = Path('/content/drive/MyDrive/ColabNotebooks/mlm_finetune_output')/ 'model'
     args.output_dir = Path('mlm_finetune_output') / "model"
     # args.pregenerated_data = pathlib.Path('/content/drive/MyDrive/ColabNotebooks/mlm_prepare_data')
-    args.pregenerated_data = pathlib.Path('mlm_prepared_data_2')
+    args.pregenerated_data = pathlib.Path('mlm_prepared_data_3')
     
     pretrain_on_treatment(args, BIOBERT_MODEL)
    

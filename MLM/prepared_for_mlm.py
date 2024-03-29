@@ -8,6 +8,7 @@ from tqdm import tqdm
 from multiprocessing import Pool
 from sklearn.model_selection import train_test_split
 from mlm_utils.preprocess_functions import check_data_dir
+from mlm_utils.preprocess_functions import get_pos_tag_word
 from mlm_utils.model_utils import MLM_IGNORE_LABEL_IDX, VOCAB_SIZE, BATCH_SIZE, EPOCHS, MAX_SEQ_LEN, BERT_PRETRAIN_MODEL, NLP, TOKENIZER
 
 
@@ -108,13 +109,6 @@ def convert_csv_to_tsv(readDir, writeDir):
             nerW.write("{}\t{}\t{}\n".format(uid[i], labelNer[i], text[i]))
     nerW.close()
  
-def get_pos_tag(word, text):
-    doc = NLP(text)
-    for token in doc:
-        if token.text == word:
-            return token.pos_
-    return None
-
 
 def get_tokens_for_words(words, input_ids, offsets):
     '''
@@ -169,29 +163,32 @@ def mask_content_words(ids, word_dict):
     labels = []
     masked_sentences = []
     except_tokens = [TOKENIZER.cls_token_id, TOKENIZER.sep_token_id, TOKENIZER.pad_token_id, TOKENIZER.unk_token_id]
-    count_masked_words = []
+  
     for (key, value) in word_dict.items():
         masked_ids = ids.clone() # torch.Size([1, 85])
-        label = torch.full_like(masked_ids, fill_value=-100)
-        count_masked_key = 0
-        if get_pos_tag(key, ' '.join(word_dict.keys())) in ['NOUN', 'VERB', 'ADJ', 'ADV']:
-            masked_indice = torch.full_like(masked_ids, fill_value=0)
-            for i in range(len(masked_ids[0]) - len(value) + 1):
-                if torch.equal(torch.as_tensor(masked_ids[0][i:i+len(value)]).clone().detach(), torch.as_tensor(value).clone().detach()):
-                    masked_ids[0][i:i+len(value)]= TOKENIZER.mask_token_id
-                    masked_indice[masked_ids == TOKENIZER.mask_token_id] = 1
-                    count_masked_key += 1
-             
-                    
-            for idx, mask in enumerate(masked_indice[0]):
-                if mask == 1:
-                    label[0][idx] = ids[0][idx]
-                         
-            masked_sentences.append(masked_ids)
-            labels.append(label)
-            count_masked_words.append(count_masked_key)
+        origin_sample = decode_token(masked_ids[0], skip_special_tokens=True)
+        if get_pos_tag_word(key, origin_sample).get(key) in ['NOUN', 'VERB', 'ADJ', 'ADV']:
             
-    return masked_sentences, labels, count_masked_words
+            for i in range(len(masked_ids[0]) - len(value) + 1):
+                masked_id = masked_ids.clone()
+                label = torch.full_like(masked_id, fill_value=-100)
+                masked_indice = torch.full_like(masked_id, fill_value=0)
+            
+                if torch.equal(torch.as_tensor(masked_id[0][i:i+len(value)]).clone().detach(), torch.as_tensor(value).clone().detach()):
+                    masked_id[0][i:i+len(value)]= TOKENIZER.mask_token_id
+                    #print("MASKED ID: ", masked_id)
+                    masked_indice[masked_id == TOKENIZER.mask_token_id] = 1
+                    #print("MASKED INDICE: ", masked_indice)
+                    
+                    
+                    for idx, mask in enumerate(masked_indice[0]):
+                        if mask == 1:
+                            label[0][idx] = ids[0][idx]
+                            
+                    masked_sentences.append(masked_id)
+                    labels.append(label)
+            
+    return masked_sentences, labels
 
 def masking_sentence_word(words, input_ids, offsets):
     '''
@@ -205,10 +202,9 @@ def masking_sentence_word(words, input_ids, offsets):
     word_dict = get_tokens_for_words(words, input_ids, offsets)
    
     # masked the tokens if the word is the content word
-    masked_sentences, label_ids, count_masked_words = mask_content_words(input_ids, word_dict)
+    masked_sentences, label_ids = mask_content_words(input_ids, word_dict)
     
-    return masked_sentences, label_ids, count_masked_words
-
+    return masked_sentences, label_ids
 
 
 def get_word_list(text):
@@ -249,23 +245,20 @@ def tokenize_csv_to_json(dataDir, wriDir):
                 tokenized_sentence = encode_text(' '.join(word_lst))
                 
                 # Mask the content words
-                masked_sens, label_ids, count_masked_words = masking_sentence_word(
+                masked_sens, label_ids = masking_sentence_word(
                     word_lst, 
                     tokenized_sentence['input_ids'], 
                     tokenized_sentence['offset_mapping'][0]
                     )
-                
-                
                 # Create a feature for each masked sentence
-                for mask, label, count in zip(masked_sens, label_ids, count_masked_words):
+                for mask, label in zip(masked_sens, label_ids):
                     assert len(mask[0]) == MAX_SEQ_LEN, "Mismatch between processed tokens and labels"
                     
                     feature = {
                         'token_id': mask[0].numpy().tolist(), 
                         'attention_mask': tokenized_sentence['attention_mask'][0].numpy().tolist(),  
                         'token_type_ids': tokenized_sentence['token_type_ids'][0].numpy().tolist(), 
-                        'labels': label[0].numpy().tolist(),
-                        'count': count}
+                        'labels': label[0].numpy().tolist()}
                 
                     features.append(feature)
                 
@@ -273,9 +266,9 @@ def tokenize_csv_to_json(dataDir, wriDir):
                 pbar.update(1)
             
             
-            # Write to a CSV file
-            df_feature = pd.DataFrame(features)
-            df_feature.to_csv(writeFile, index = False)
+        # Write to a CSV file
+        df_feature = pd.DataFrame(features)
+        df_feature.to_csv(writeFile, index = False)
            
 
 def data_split(dataDir, wriDir):
@@ -342,9 +335,9 @@ def data_split(dataDir, wriDir):
             
 def main():
     
-    tokenize_csv_to_json('./interim/', './mlm_output_2/')
+    # tokenize_csv_to_json('./interim/', './mlm_output_3/')
     
-    data_split('./mlm_output_2/', './mlm_prepared_data_2/')
+    data_split('./mlm_output_3/', './mlm_prepared_data_3/')
     
 if __name__ == "__main__":
     main() 
