@@ -20,18 +20,23 @@ VOCAB_SIZE = 28996
 wwm_probability = 0.1
 
    
-def get_files(dir):
+def get_files(dir: str) -> list:
+    '''Function to get the list of files in a given folder'''
+    
     files = []
     for path in os.listdir(dir):
         if os.path.isfile(os.path.join(dir, path)):
             files.append(path)
     return files
 
-def decode_token(input_ids, skip_special_tokens=False):
-    return TOKENIZER.decode(input_ids, skip_special_tokens=skip_special_tokens)
-
-def encode_text(text):
+def decode_token(input_ids: list, skip_special_tokens=False) -> str:
+    ''' Funciton to decode the token to text
+    '''
     
+    return TOKENIZER.decode(input_ids, skip_special_tokens=skip_special_tokens, return_offsets_mapping=True)
+
+def encode_text(text: str) -> dict:
+    ''' Function to encode the text '''
     return TOKENIZER.encode_plus(
                     text,
                     max_length=MAX_SEQ_LEN,
@@ -43,7 +48,7 @@ def encode_text(text):
                     return_offsets_mapping=True  
                 )
 
-def convert_csv_to_tsv(readDir, writeDir):
+def convert_csv_to_tsv(readDir: str, writeDir: str) -> None:
     '''
     convert_csv_to_tsv('../MLM/interim/', 'coNLL_tsv')
     '''
@@ -110,7 +115,7 @@ def convert_csv_to_tsv(readDir, writeDir):
     nerW.close()
  
 
-def get_tokens_for_words(words, input_ids, offsets):
+def get_tokens_for_words(words: list, input_ids: list, offsets: list) -> dict:
     '''
     Input:
         words = ['The', 'capital', 'of', 'the', 'France', 'is', 'Paris', '.']
@@ -148,16 +153,16 @@ def get_tokens_for_words(words, input_ids, offsets):
 
     return {word: [item for sublist in tokens 
                             for item in sublist 
-                                if item not in except_tokens ]  for word_idx, (word, tokens) in enumerate(word_dict.items()) }
+                                if item not in except_tokens ]  for (word, tokens) in word_dict.items() }
 
 
-def mask_content_words(ids, word_dict):
+def mask_content_words(ids: torch.Tensor, word_dict: dict) -> tuple:
     '''
     input:
         ids: sample_id 
         word_dict: {'The': [tensor(170)], 'capital': [tensor(1109), tensor(3007)], ....}
     output:
-        masked_sentences: [tensor([  101,  1103, 175, 10555,  103,   103,   103,   102])
+        masked_sentences: [tensor([  101,  1103, 175, 10555,  103,   103,   103,   102])]
         label_ids: [tensor(6468)], [tensor(1568), tensor(13892)]
     '''
     labels = []
@@ -190,7 +195,7 @@ def mask_content_words(ids, word_dict):
             
     return masked_sentences, labels
 
-def masking_sentence_word(words, input_ids, offsets):
+def masking_sentence_word(words: list, input_ids: torch.tensor, offsets: list) -> tuple:
     '''
     Input: 
         words = ['The', 'capital', 'of', 'France', 'is', 'Paris', '.']
@@ -207,12 +212,14 @@ def masking_sentence_word(words, input_ids, offsets):
     return masked_sentences, label_ids
 
 
-def get_word_list(text):
+def get_word_list(text: str) -> list:
+    '''Function to get the list of words from a given text using spacy'''
+    
     doc = NLP(text)
     word_lst = [word.text for word in [token for token in doc]]
     return word_lst
 
-def tokenize_csv_to_json(dataDir, wriDir):
+def tokenize_csv_to_json(dataDir: str, wriDir: str) -> None:
     '''
     Tokenize_csv_to_json('./interim/', './mlm_output/')
     Function to create data in MLM format.
@@ -271,7 +278,7 @@ def tokenize_csv_to_json(dataDir, wriDir):
         df_feature.to_csv(writeFile, index = False)
            
 
-def data_split(dataDir, wriDir):
+def data_split(dataDir: str, wriDir: str) -> tuple:
     
     '''
     data_split('mlm_output', 'mlm_prepared_data')

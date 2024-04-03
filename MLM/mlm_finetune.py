@@ -20,8 +20,8 @@ from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data.distributed import DistributedSampler 
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from transformers import AdamW, get_linear_schedule_with_warmup, BertForMaskedLM 
-from mlm_utils.preprocess_functions import get_pos_tag_word, get_key, get_heuristic_word
-from mlm_utils.model_utils import BATCH_SIZE, EPOCHS, BIOBERT_MODEL, BERT_PRETRAIN_MODEL, TOKENIZER, NUM_CPU
+from mlm_utils.preprocess_functions import get_pos_tag_word, get_key, get_heuristic_word, get_pos_tag_id
+from mlm_utils.model_utils import BATCH_SIZE, EPOCHS, BIOBERT_MODEL, BERT_PRETRAIN_MODEL, TOKENIZER, NUM_CPU, MAX_SEQ_LEN
 from prepared_for_mlm import get_word_list, data_split, get_tokens_for_words, encode_text, decode_token
 
 
@@ -46,63 +46,57 @@ def is_POS_match(b_input_id, b_logit_id, b_label_id):
         logit_id = b_logit_id[idx_sample]
         label_id = b_label_id[idx_sample]
         
-        origin_input_id = input_id.clone()
         pred_id = input_id.clone() 
+        origin_input_id = input_id.clone()
         
         # Find the index of the masked token from lm_label_ids
         mask_index = torch.where(label_id != -100)[0]
         masked_idx_input = torch.where(input_id == TOKENIZER.mask_token_id)[0]
         
-        # make sure masked_idx_input and mask_index are the same using assert
+        # make sure masked_idx_input and mask_index are the same using asser
         assert torch.equal(mask_index, masked_idx_input), "Masked index and label index are not the same."
         origin_input_id[masked_idx_input] = label_id[mask_index] 
         
         
+        # "================= ORIGINAL ============= ")
         # get pos tag of origin text
         origin_text = decode_token(origin_input_id, skip_special_tokens=True) 
         
-        word_lst = get_word_list(origin_text)
-        
-        encode_sample = encode_text(' '.join(word_lst))
-                
-        word_dict = get_tokens_for_words(
-            word_lst, 
-            encode_sample['input_ids'], 
-            encode_sample['offset_mapping'][0])
-        
-        # print("WORD DICT: ", word_dict)
-        
-        # Get key for the masked token
-        # print("origin sentence: ", decode_token(origin_input_id, skip_special_tokens=True))
-        #print("MASKED WORD", decode_token(origin_input_id[mask_index]))
-        # masked_word = get_key(word_dict, origin_input_id[mask_index])
+        # Get masked word in the sentence
         masked_word = decode_token(origin_input_id[mask_index])
         
         pos_tag_origin = get_pos_tag_word(masked_word, origin_text)
-        #print("MASKED WORD: ",  pos_tag_origin)         
         
+        word_list = get_word_list(origin_text)
+        word_dict = {i: torch.tensor(TOKENIZER.encode_plus(i,add_special_tokens = False)['input_ids'], dtype=torch.int64) for i in word_list}
+
+        pos_tag_id_origin = get_pos_tag_id(word_dict, pos_tag_origin, label_id)
+        
+        # "-============== PREDICTION =================="
         pred = [torch.argmax(logit_id[i]).item() for i in mask_index]
-        # for i in range(len(pred)):
-        #     print("pred: ", decode_token(pred[i]),pred[i] )
-    
-        # Get the index of the predicted token
-        # replace the index of the masked token with the list of predicted tokens
+
+        # Replace the index of the masked token with the list of predicted tokens
         for i in mask_index:
             pred_id[i] = pred[i - mask_index[0]]
-            
-        # print("result sentence: ", decode_token(pred_id, skip_special_tokens=True))
-        # print("PRED WORD: ", decode_token(pred))
+         
+         
+        pos_tag_dict_pred = get_pos_tag_word(decode_token(pred), decode_token(pred_id, skip_special_tokens=True) )
         
+        pred_sentence = decode_token(pred_id, skip_special_tokens=True)
+       
+        pred_word_list = get_word_list(pred_sentence)
         
-        pos_tag_dict = get_pos_tag_word(decode_token(pred), decode_token(pred_id, skip_special_tokens=True) )
-        word, pos_tag = get_heuristic_word(pos_tag_dict )
+        word_dict_pred = {i: torch.tensor(TOKENIZER.encode_plus(i, add_special_tokens = False)['input_ids'], dtype=torch.int64) for i in pred_word_list}
+       
+        # get pos tag for all tokens of each word
+        pos_tag_id_pred = get_pos_tag_id(word_dict_pred, pos_tag_dict_pred, pred_id)
+       
+        matching_term_tensor = torch.zeros_like(pos_tag_id_pred)
         
-        # print("POS TAG PRED WORD: ", word,  pos_tag)
+        matching_term_tensor[mask_index] = torch.where(pos_tag_id_pred[mask_index] == pos_tag_id_origin[mask_index], 
+                                       torch.tensor(1), 
+                                       torch.tensor(0))
 
-        matching_term = (pos_tag_origin == pos_tag)
-        
-        matching_term_tensor = torch.where(matching_term == torch.tensor(True), torch.tensor(1.0), torch.tensor(0.0))
-        
         b_matching_term.append(matching_term_tensor)
         
     return b_matching_term
@@ -112,15 +106,12 @@ def custom_loss(b_logit_id, b_input_id, b_label_id):
    
     # Cross-entropy term
     b_cross_entropy_term = F.cross_entropy((1-b_logit_id).view(-1, TOKENIZER.vocab_size), b_label_id.view(-1), reduction='none')
-      
-    print("SHAPE OF CROSS ENTROPY TERM: ", b_cross_entropy_term.shape) # 2720 = 32 * 85
+   
     # Custom matching term
-    b_matching_term = is_POS_match(b_input_id, b_logit_id, b_label_id)
-    print("SHAPE OF matching TERM: ", len(b_matching_term)) 
-
+    b_matching_term = torch.stack(is_POS_match(b_input_id, b_logit_id, b_label_id)).view(-1)
 
     # Combine terms
-    b_loss = 0.5 * (b_cross_entropy_term) #+ (1 - b_matching_term))
+    b_loss = 0.5 * ((b_cross_entropy_term) + (1 - b_matching_term))
     return b_loss.mean()
 
 
@@ -148,7 +139,6 @@ def eval_model(args, model, validation_dataloader):
          
         batch = tuple(t.to(device) for t in batch)
         b_input_ids, b_input_attention_mask, b_labels = batch  
-        
         
         # step 1. compute the output    
         with torch.no_grad():   
@@ -204,9 +194,7 @@ def visualize_acc(loss_dict):
     plt.legend()
     plt.grid(True)
     plt.show()
-    
-
-    
+        
 def train(args, model, optimizer, scheduler, val_dataset, train_dataset):
    
    
@@ -233,6 +221,8 @@ def train(args, model, optimizer, scheduler, val_dataset, train_dataset):
     
     m = tf.metrics.Accuracy()
     m_f1 = tf.metrics.F1Score()
+    
+    
     # print('\n========   Evaluate before training   ========')
     
     # val_loss, val_accuracy = eval_model(args, model, validation_dataloader)
@@ -281,12 +271,17 @@ def train(args, model, optimizer, scheduler, val_dataset, train_dataset):
                 optimizer.zero_grad()
                 
                 # step 2: compute the output
-                outputs = model(b_mask_input_id, attention_mask=b_attention_mask,token_type_ids = b_token_type_id, labels=b_label_id) 
-                # outputs: loss, logits, hidden_states, attentions
+                outputs = model(b_mask_input_id, 
+                                attention_mask=b_attention_mask,
+                                token_type_ids = b_token_type_id, 
+                                labels=b_label_id) 
                 
                 # step 3: compute the loss
                 # loss = outputs.loss
-                loss = custom_loss(b_logit_id=outputs.logits, b_input_id=b_mask_input_id, b_label_id=b_label_id)
+                loss = custom_loss(b_logit_id=outputs.logits, 
+                                   b_input_id=b_mask_input_id, 
+                                   b_label_id=b_label_id)
+                print("Loss:", loss)
                 if n_gpu > 1:
                     loss = loss.mean() # mean() to average on multi-gpu.
                 if args.gradient_accumulation_steps > 1:
@@ -298,7 +293,7 @@ def train(args, model, optimizer, scheduler, val_dataset, train_dataset):
                 # step 5: use optimizer to take gradient step
                 if (batch_index + 1) % args.gradient_accumulation_steps == 0:
                     optimizer.step()
-                    scheduler.step() #update the learning rate
+                    scheduler.step() 
                     optimizer.zero_grad()
                 
                 # -----------------------------------------------------------
@@ -386,13 +381,7 @@ def generate_batches(local_rank, dataset, batch_size,
         batch_size=batch_size,
         drop_last=drop_last,
         num_workers=NUM_CPU)  
-    
-    # for data_dict in dataloader:
-    #     print(data_dict)
-    #     out_data_dict = {}
-    #     for name, tensor in data_dict.items():
-    #         out_data_dict[name] = data_dict[name].to(device)
-    #     yield out_data_dict
+
     return dataloader
 
 def pretrain_on_treatment(args, model):
@@ -410,12 +399,8 @@ def pretrain_on_treatment(args, model):
     
     # Prepare parameters
     num_train_steps = math.ceil(args.num_samples / args.train_batch_size) * args.epochs // args.gradient_accumulation_steps
-    
     total_steps = int(num_train_steps * args.gradient_accumulation_steps / args.epochs)
-    
     print("Num train optimization steps: ", total_steps)
-    
-    # Prepare loss
     
     
     # Prepare optimizer

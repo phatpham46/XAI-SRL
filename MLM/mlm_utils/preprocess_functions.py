@@ -1,19 +1,30 @@
 
 import os
 import spacy
-import torch
 import numpy as np
+import torch
 nlp = spacy.load("en_core_web_sm")
     
 
-def check_data_dir(data_dir, auto_create=False):
+def check_data_dir(data_dir: str, auto_create=False) -> None:
+    """ Check if the data directory exists. If it does not exist, create it if auto_create is True.
+
+    Args:
+        data_dir (str): Path to the data directory.
+        auto_create (bool, optional): auto create or not . Defaults to False.
+
+    Raises:
+        FileNotFoundError: 
+    """
+    
     if not os.path.exists(data_dir):
         if auto_create:
             os.makedirs(data_dir)
         else:
             raise FileNotFoundError(f"Data directory {data_dir} does not exist.")
 
-def get_pos_tag_word(word, text):
+def get_pos_tag_word(word, text) :
+    
     doc = nlp(text)
     word_split = word.split()
     pos_tag_dict = {}
@@ -23,7 +34,10 @@ def get_pos_tag_word(word, text):
     return pos_tag_dict
 
 
-def compare_tensors(list1, list2):
+def compare_tensors(list1: torch.Tensor, list2: torch.Tensor) -> bool:
+    '''Function to compare two lists of tensors '''
+
+    
     # Check if the lengths of the lists are the same
     if len(list1) != len(list2):
         return False
@@ -35,13 +49,15 @@ def compare_tensors(list1, list2):
     
     return True
 
-def get_key(dictionary, value):
+def get_key(dictionary: dict, value: torch.Tensor) -> str:
+    ''' Function to get the key from a dictionary given a value '''
     for key, val in dictionary.items():
         if compare_tensors(val, value):
             return key
     return None  # If value is not found in the dictionary
 
-def get_max_length_word(pred_list):
+
+def get_max_length_word(pred_list: list) -> int:
     '''Function to get the longest length word
     Input: 
         pred_list: ["Ba", "masture", "ofs", "a"]
@@ -54,7 +70,33 @@ def get_max_length_word(pred_list):
             max_len = len(pred)
     
     return max_len
-def get_heuristic_word(pos_tag_dict):
+
+def pos_tag_mapping(pos_tag):
+    if pos_tag =="NOUN":
+        return 1
+    elif pos_tag =="VERB":
+        return 2
+    elif pos_tag =="ADJ":
+        return 3
+    elif pos_tag == "ADV":
+        return 4
+    else:
+        return -1
+
+def get_pos_tag_id(word_dict, pos_tag_dict, label_id):
+    pos_tag_id = torch.full_like(label_id, fill_value=-1)
+    
+    for key in pos_tag_dict.keys():
+        tokens = word_dict.get(key)
+        
+        for i in range(len(label_id) - len(tokens) + 1):
+            if torch.equal(torch.as_tensor(label_id[i:i+len(tokens)]).clone().detach(), torch.as_tensor(tokens).clone().detach()):
+               
+                pos_tag_id[i:i+len(tokens)] = pos_tag_mapping(pos_tag_dict.get(key))
+ 
+    return pos_tag_id
+
+def get_heuristic_word(pos_tag_dict: dict) -> tuple:
     '''Function to get the longest length word, if it has more than 2 words, will return the content word
     Input: 
         pred_list: ["Ba", "masture", "ofs", "a"]
