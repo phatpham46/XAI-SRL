@@ -15,7 +15,7 @@ from collections import defaultdict
 from argparse import ArgumentParser
 from babel.dates import format_time
 from mlm_utils.custom_dataset import CustomDataset
-sys.path.insert(1, '/content/SRLPredictionEasel')
+# sys.path.insert(1, '/content/SRLPredictionEasel')
 from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data.distributed import DistributedSampler 
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
@@ -25,9 +25,9 @@ from mlm_utils.model_utils import BATCH_SIZE, EPOCHS, BIOBERT_MODEL, BERT_PRETRA
 from prepared_for_mlm import get_word_list, data_split, get_tokens_for_words, encode_text, decode_token
 
 
-# sys.path.insert(1, '../')
-# tb = SummaryWriter()
-tb = SummaryWriter("/content/SRLPredictionEasel/MLM/logs")
+sys.path.insert(1, '../')
+tb = SummaryWriter()
+# tb = SummaryWriter("/content/SRLPredictionEasel/MLM/logs")
 
 
 
@@ -394,11 +394,11 @@ def pretrain_on_treatment(args, model):
     # Prepare data
     
     train_dataset = CustomDataset(
-        data_path=args.pregenerated_data, 
+        data_path=args.data_dir, 
         file_name='train_mlm.json')
     
     validation_dataset = CustomDataset(
-        data_path=args.pregenerated_data,
+        data_path=args.data_dir,
         file_name='dev_mlm.json')
     
     
@@ -434,8 +434,8 @@ def pretrain_on_treatment(args, model):
 
 def main():
     parser = ArgumentParser()
-    parser.add_argument('--pregenerated_data', type=str, required=True)
-    parser.add_argument("--output_dir", type=str, required=True)
+    parser.add_argument('--data_dir', type=Path, required=True)
+    parser.add_argument("--output_dir", type=Path, required=True)
     parser.add_argument("--bert_model", type=str, required=False, default=BERT_PRETRAIN_MODEL,
                         help="Bert pre-trained model")
     parser.add_argument("--do_lower_case", action="store_true")
@@ -486,8 +486,8 @@ def main():
     # args.output_dir = Path('/content/drive/MyDrive/ColabNotebooks/mlm_finetune_output')/ 'model'
    
     # args.output_dir = Path('mlm_finetune_output') / "model"
-    # args.pregenerated_data = pathlib.Path('/content/drive/MyDrive/ColabNotebooks/mlm_prepare_data')
-    # args.pregenerated_data = pathlib.Path('mlm_prepared_data_3')
+    # args.data_dir = pathlib.Path('/content/drive/MyDrive/ColabNotebooks/mlm_prepare_data')
+    # args.data_dir = pathlib.Path('mlm_prepared_data_3')
     
     pretrain_on_treatment(args, BIOBERT_MODEL)
    

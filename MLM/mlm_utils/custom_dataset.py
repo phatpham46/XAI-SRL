@@ -7,7 +7,7 @@ class CustomDataset(Dataset):
     
     def __init__(self, data_path, file_name):
         self.data = []
-        with open(data_path + file_name, 'r') as f:
+        with open(data_path / file_name, 'r') as f:
             lines = f.readlines()
             for line in lines:
                 data_dict = json.loads(line)
