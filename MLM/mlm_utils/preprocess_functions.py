@@ -3,6 +3,9 @@ import os
 import spacy
 import numpy as np
 import torch
+from mlm_utils.model_utils import BATCH_SIZE, EPOCHS, BIOBERT_MODEL, BERT_PRETRAIN_MODEL, TOKENIZER, NUM_CPU, MAX_SEQ_LEN
+
+from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 nlp = spacy.load("en_core_web_sm")
     
 
@@ -23,6 +26,28 @@ def check_data_dir(data_dir: str, auto_create=False) -> None:
         else:
             raise FileNotFoundError(f"Data directory {data_dir} does not exist.")
 
+def get_sampler(local_rank, dataset):
+    if local_rank == -1:
+        return RandomSampler(dataset)
+    else:
+        return SequentialSampler(dataset)
+    
+
+def generate_batches(local_rank, dataset, batch_size,
+    drop_last=True, device="cpu"):
+    """
+    A generator function which wraps the PyTorch DataLoader. It will
+    ensure each tensor is on the write device location.
+    """
+    dataloader = DataLoader(
+        dataset=dataset, 
+        sampler=get_sampler(local_rank, dataset),
+        batch_size=batch_size,
+        drop_last=drop_last,
+        num_workers=NUM_CPU)  
+
+    return dataloader
+
 def get_pos_tag_word(word, text) :
     
     doc = nlp(text)
@@ -32,6 +57,14 @@ def get_pos_tag_word(word, text) :
         if token.text in word_split:
             pos_tag_dict[token.text] = token.pos_
     return pos_tag_dict
+
+
+def get_word_list(text: str) -> list:
+    '''Function to get the list of words from a given text using spacy'''
+    
+    doc = NLP(text)
+    word_lst = [word.text for word in [token for token in doc]]
+    return word_lst
 
 
 def compare_tensors(list1: torch.Tensor, list2: torch.Tensor) -> bool:

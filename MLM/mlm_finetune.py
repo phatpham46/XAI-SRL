@@ -2,33 +2,90 @@ import math
 import time
 import torch
 import sys
-import logging
-import pathlib
+import os
 import tensorflow as tf
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
 
-
 from tqdm import tqdm
 from pathlib import Path
+from logger_ import make_logger
 from collections import defaultdict
 from argparse import ArgumentParser
 from babel.dates import format_time
 from mlm_utils.custom_dataset import CustomDataset
 # sys.path.insert(1, '/content/SRLPredictionEasel')
 from torch.utils.tensorboard import SummaryWriter
-from torch.utils.data.distributed import DistributedSampler 
-from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
-from transformers import AdamW, get_linear_schedule_with_warmup, BertForMaskedLM 
-from mlm_utils.preprocess_functions import get_pos_tag_word, get_key, get_heuristic_word, get_pos_tag_id
-from mlm_utils.model_utils import BATCH_SIZE, EPOCHS, BIOBERT_MODEL, BERT_PRETRAIN_MODEL, TOKENIZER, NUM_CPU, MAX_SEQ_LEN
-from prepared_for_mlm import get_word_list, data_split, get_tokens_for_words, encode_text, decode_token
+from transformers import get_linear_schedule_with_warmup 
+from mlm_utils.preprocess_functions import get_pos_tag_word, get_pos_tag_id, generate_batches
+from mlm_utils.model_utils import BATCH_SIZE, EPOCHS, BIOBERT_MODEL, BERT_PRETRAIN_MODEL, TOKENIZER
+from prepared_for_mlm import get_word_list, decode_token
+from datetime import datetime
 
 
 sys.path.insert(1, '../')
 tb = SummaryWriter()
 # tb = SummaryWriter("/content/SRLPredictionEasel/MLM/logs")
 
+def make_argument(parser):
+    parser.add_argument('--data_dir', type=Path, required=True)
+    parser.add_argument("--output_dir", type=Path, required=True)
+    parser.add_argument("--bert_model", type=str, required=False, default=BERT_PRETRAIN_MODEL,
+                        help="Bert pre-trained model")
+    parser.add_argument("--do_lower_case", action="store_true")
+    parser.add_argument("--reduce_memory", action="store_true",
+                        help="Store training data as on-disc memmaps to massively reduce memory usage")
+    parser.add_argument("--num_samples", type=int, required=False, default=51823)
+    parser.add_argument("--epochs", type=int, default=EPOCHS, help="Number of epochs to train for")
+    parser.add_argument("--local_rank",
+                        type=int,
+                        default=-1,
+                        help="local_rank for distributed training on gpus")
+    parser.add_argument("--no_cuda",
+                        action='store_true',
+                        help="Whether not to use CUDA when available")
+    parser.add_argument('--gradient_accumulation_steps',
+                        type=int,
+                        default=1,
+                        help="Number of updates steps to accumulate before performing a backward/update pass.")
+    parser.add_argument("--train_batch_size",
+                        default=BATCH_SIZE,
+                        type=int,
+                        help="Size of each batch.")
+    parser.add_argument("--warmup_steps",
+                        default=0,
+                        type=int,
+                        help="Linear warmup over warmup_steps.")
+    parser.add_argument("--adam_epsilon",
+                        default=1e-8,
+                        type=float,
+                        help="Epsilon for Adam optimizer.")
+    parser.add_argument("--learning_rate",
+                        default=1e-5,
+                        type=float,
+                        help="The initial learning rate for Adam.")
+    parser.add_argument('--debug_mode', default = False, action = 'store_true', help = "record logs for debugging if True")
+    parser.add_argument('--log_file', default='mlm_finetune_logs.log', type = str, help = "name of log file to store")
+    parser.add_argument('--silent', default = False, action = 'store_true', 
+                        help = "Only write logs to file if True")
+    parser.add_argument("--corpus_type", type=str, required=False, default="")
+    
+    return parser
+
+parser = ArgumentParser()
+parser = make_argument(parser)
+args = parser.parse_args()
+
+
+# setting logging
+now = datetime.now()
+logDir = now.strftime("%d_%m-%H_%M")
+if not os.path.isdir(logDir):
+    os.makedirs(logDir)
+
+logger = make_logger(name = "mlm_finetune", debugMode=args.debug_mode,
+                    logFile=os.path.join(logDir, args.log_file), silent=args.silent)
+logger.info("logger created.")
 
 
 
@@ -130,8 +187,10 @@ def eval_model(args, model, validation_dataloader):
     model.to(device)
     
     t0 = time.time()
-    total_eval_loss = 0
-    total_eval_accuracy = 0
+    avg_eval_loss_batch = 0
+    avg_eval_accuracy_batch = 0
+    total_loss = 0
+    total_accuracy = 0
     model.eval()
     
     m = tf.metrics.Accuracy()
@@ -148,21 +207,19 @@ def eval_model(args, model, validation_dataloader):
             # Assuming b_labels and logits are NumPy arrays
             m.update_state(b_labels.cpu(), torch.argmax(output.logits, dim=-1).cpu())
         
-            # b_labels_np = b_labels.cpu().numpy()
-            # logits_np = torch.argmax(output.logits, dim=-1).cpu().numpy()
-            
         # step 2. compute the loss
-        loss = output.loss
-        loss_batch = loss.item()
-        total_eval_loss += (loss_batch - total_eval_loss) / (batch_index + 1)
+        loss_batch = output.loss.item()
+        total_loss += loss_batch
+        avg_eval_loss_batch += (loss_batch - avg_eval_loss_batch) / (batch_index + 1)
         
         # step 3: compute the accuracy
         accuracy = m.result().numpy()
-        total_eval_accuracy += (accuracy - total_eval_accuracy) / (batch_index + 1)
+        avg_eval_accuracy_batch += (accuracy - avg_eval_accuracy_batch) / (batch_index + 1)
+        total_accuracy += accuracy
         
-    # avg_eval_loss = total_eval_loss / len(validation_dataloader)
-    # avg_eval_accuracy = total_eval_accuracy / len(validation_dataloader) 
-    return (total_eval_loss, total_eval_accuracy)
+    avg_eval_loss = total_loss / len(validation_dataloader)
+    avg_eval_accuracy = total_accuracy / len(validation_dataloader) 
+    return (avg_eval_loss, avg_eval_accuracy)
 
 def visualize_acc(loss_dict):
     '''
@@ -207,30 +264,26 @@ def train(args, model, optimizer, scheduler, val_dataset, train_dataset):
         device = torch.device("cuda", args.local_rank)
         n_gpu = 1       
     
-    # logging.info("device: {} n_gpu: {}, distributed training: {}, 16-bits training: {}".format(
-    #     device, n_gpu, bool(args.local_rank != -1), args.fp16))
+    logger.info("device: {} n_gpu: {}".format(device, n_gpu))
+
 
     if args.gradient_accumulation_steps < 1:
         raise ValueError("Invalid gradient_accumulation_steps parameter: {}, should be >= 1".format(args.gradient_accumulation_steps))
 
     if args.output_dir.is_dir() and list(args.output_dir.iterdir()):
-        logging.warning(f"Output directory ({args.output_dir}) already exists and is not empty!")
+        logger.warning(f"Output directory ({args.output_dir}) already exists and is not empty!")
+        
     args.output_dir.mkdir(parents=True, exist_ok=True)
     
     total_time = time.time()
-    train_steps = 0
+    train_steps = 0 # across all samples
+    global_step = 0 # across all batches
+    
     
     m = tf.metrics.Accuracy()
     m_f1 = tf.metrics.F1Score()
     
-    
-    # print('\n========   Evaluate before training   ========')
-    
-    # val_loss, val_accuracy = eval_model(args, model, validation_dataloader)
-    # tb.add_scalar('validation loss', val_loss)
-    # tb.add_scalar('validation accucracy', val_accuracy)
-    # print("Average validiation loss: {:} avg val accuracy {:} : ".format(val_loss, val_accuracy))
-    
+
     # Prepare model
     model = BIOBERT_MODEL
     model.to(device)
@@ -238,24 +291,25 @@ def train(args, model, optimizer, scheduler, val_dataset, train_dataset):
     if n_gpu > 1:
         model = torch.nn.DataParallel(model)
 
-    global_step = 0
-    logging.info("***** Running training *****")
-    logging.info(f" Num examples = {args.num_samples}")
-   
-
-    loss_dict = defaultdict(list)
-    for epoch in range(args.epochs):
-        total_train_loss  = 0 # running loss
-        total_train_accuracy = 0  # running accuracy
-        print('\n======== EPOCH {:} / {:} ========'.format(epoch + 1, args.epochs))
-       
-        num_train_steps = math.ceil(args.num_samples / args.train_batch_size) * args.epochs // args.gradient_accumulation_steps
     
+    logger.info("***** Running training *****")
+    logger.info(f" Num examples = {args.num_samples}")
+   
+    loss_dict = defaultdict(list)
+
+    for epoch in range(args.epochs):
+        avg_train_loss  = 0 # running loss
+        avg_train_acc = 0  # running accuracy
+        logger.info('\n================= EPOCH {:} / {:} ================='.format(epoch + 1, args.epochs))
+
+        num_train_steps = math.ceil(args.num_samples / args.train_batch_size) * args.epochs // args.gradient_accumulation_steps
+
         total_steps = int(num_train_steps * args.gradient_accumulation_steps / args.epochs)
         t0 = time.time()
         model.train()
         print('put model in train mode')
 
+        logger.info("Create data for training...")
         train_dataloader = generate_batches(
             local_rank= args.local_rank, 
             dataset=train_dataset, 
@@ -266,7 +320,7 @@ def train(args, model, optimizer, scheduler, val_dataset, train_dataset):
             for batch_index, batch in enumerate(train_dataloader):
                 
                 batch = tuple(t.to(device) for t in batch)  
-                b_mask_input_id, b_attention_mask,b_token_type_id, b_label_id = batch 
+                b_mask_input_id, b_attention_mask, b_token_type_id, b_label_id = batch 
                 
                 # step 1: zero the gradient  
                 optimizer.zero_grad()
@@ -278,16 +332,11 @@ def train(args, model, optimizer, scheduler, val_dataset, train_dataset):
                                 labels=b_label_id) 
                 
                 # step 3: compute the loss
-                # loss = outputs.loss
                 loss = custom_loss(args,b_logit_id=outputs.logits, 
                                    b_input_id=b_mask_input_id, 
                                    b_label_id=b_label_id)
-                print("Loss:", loss)
-                # visualize loss
-                tb.add_scalar('train loss', loss, global_step)
-                global_step += 1
-
-
+                
+                
                 if n_gpu > 1:
                     loss = loss.mean() # mean() to average on multi-gpu.
                 if args.gradient_accumulation_steps > 1:
@@ -310,89 +359,67 @@ def train(args, model, optimizer, scheduler, val_dataset, train_dataset):
                 m_f1.update_state(b_label_id.cpu(), torch.argmax(logits, dim=-1).cpu())
                 
                 accuracy_batch = m.result().numpy()
-                
                 loss_batch = loss.item()
-                total_train_loss += (loss_batch - total_train_loss) / (batch_index + 1)
-               
+                
+                avg_train_loss += (loss_batch - avg_train_loss) / (batch_index + 1)
+                
                 elapsed = 0
-                if batch_index % 50 == 0 and batch_index > 0:
+                if batch_index % 100 == 0 and batch_index > 0 :
                     elapsed = format_time(time.time() - t0)
-                    print('  Batch {:>5,}  of  {:>5,}.    Elapsed: {:}. loss is {:} accuracy is {:}'.format(batch_index, len(train_dataloader), elapsed, loss.item(), accuracy_batch ))
+                    logger.info('  Batch {:>5,}  of  {:>5,}.    Elapsed: {:}. loss is {:} accuracy is {:}'.format(batch_index, len(train_dataloader), elapsed, avg_train_loss, accuracy_batch))
+                    
                 
+                    # visualize loss
+                    tb.add_scalar('train mlm loss', loss, global_step)
                 
-                # returns the average loss of batch
-                train_steps += len(batch[0])
-                
-                tb.add_scalar('train loss', outputs.loss, train_steps)
-                tb.add_scalar('train accuracy', accuracy_batch, train_steps)
-                
-                total_train_accuracy += (accuracy_batch - total_train_accuracy) / (batch_index + 1)
-                
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-                loss_dict["epoch"].append(epoch)
-                loss_dict["batch_id"].append(batch_index)
-                loss_dict["mlm_loss"].append(total_train_loss)
-                loss_dict["mlm_acc"].append(total_train_accuracy)
+                global_step += 1
                 progress.update(1)
-               
-            
-            # Save a trained model
-            if epoch < args.epochs and (n_gpu > 1 and torch.distributed.get_rank() == 0 or n_gpu <= 1):
-                logging.info("** ** * Saving fine-tuned model ** ** * ")
-                epoch_output_dir = args.output_dir / f"epoch_{epoch}"
+              
+            # Save model after each epoch
+            if  epoch < args.epochs and (n_gpu > 1 and torch.distributed.get_rank() == 0 or n_gpu <= 1):
+                logger.info("** ** * Saving fine-tuned model ** ** * ")
+                epoch_output_dir = args.output_dir / f"mlm_epoch_{epoch}"
                 epoch_output_dir.mkdir(parents=True, exist_ok=True)
+                
                 model.save_pretrained(epoch_output_dir)
                 
+                logger.info('model saved in {} global step at {}'.format(global_step, epoch_output_dir))
+                 
                 
+            # Evaluate for each epoch
+            
+            avg_train_acc += (accuracy_batch - avg_train_acc) / (batch_index + 1)
+            
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            loss_dict["epoch"].append(epoch)
+            loss_dict["batch_id"].append(batch_index)
+            loss_dict["mlm_loss"].append(avg_train_loss)
+            loss_dict["mlm_acc"].append(avg_train_acc)
+               
+            
             # avg_train_loss = total_train_loss / len(train_dataloader)
             # avg_train_accuracy = total_train_accuracy / len(train_dataloader)
             training_time = format_time(time.time() - t0)
-            print("  Average training loss: {:} Average training accuracy: {:} Training epcoh took: {:}".format(total_train_loss, total_train_accuracy, training_time))
+            print("  Average training loss: {:} Average training accuracy: {:} Training epoch took: {:}".format(avg_train_loss, avg_train_acc, training_time))
             
             
-            # val_loss, val_accuracy = eval_model(args, model, validation_dataloader)
-            # tb.add_scalar('validation loss', val_loss, epoch)
-            # tb.add_scalar('validation accucracy', val_accuracy, epoch)
-            # print("Average validiation loss: {:} avg val accuracy {:} : ".format(val_loss, val_accuracy))
-    
-    # Visualize loss and accuracy
-    visualize_acc(loss_dict)
+            
+
     
     # Save a trained model
-    if n_gpu > 1 and torch.distributed.get_rank() == 0 or n_gpu <=1:
-        logging.info("** ** * Saving fine-tuned model ** ** * ")
+    if n_gpu > 1 and (torch.distributed.get_rank() == 0 or n_gpu <=1):
+        logger.info("** ** * Saving fine-tuned model ** ** * ")
         model.save_pretrained(args.output_dir)
     
         # tokenizer.save_pretrained(args.output_dir)
         # df = pd.DataFrame.from_dict(loss_dict)
         # df.to_csv(args.output_dir/"losses.csv")
 
-def get_sampler(local_rank, dataset):
-    if local_rank == -1:
-        return RandomSampler(dataset)
-    else:
-        return SequentialSampler(dataset)
-    
 
-def generate_batches(local_rank, dataset, batch_size,
-    drop_last=True, device="cpu"):
-    """
-    A generator function which wraps the PyTorch DataLoader. It will
-    ensure each tensor is on the write device location.
-    """
-    dataloader = DataLoader(
-        dataset=dataset, 
-        sampler=get_sampler(local_rank, dataset),
-        batch_size=batch_size,
-        drop_last=drop_last,
-        num_workers=NUM_CPU)  
-
-    return dataloader
 
 def pretrain_on_treatment(args, model):
    
     # Prepare data
-    
     train_dataset = CustomDataset(
         data_path=args.data_dir, 
         file_name='train_mlm.json')
@@ -401,6 +428,9 @@ def pretrain_on_treatment(args, model):
         data_path=args.data_dir,
         file_name='dev_mlm.json')
     
+    test_dataset = CustomDataset(
+        data_path=args.data_dir,
+        file_name='test_mlm.json')
     
     # Prepare parameters
     num_train_steps = math.ceil(args.num_samples / args.train_batch_size) * args.epochs // args.gradient_accumulation_steps
@@ -422,72 +452,24 @@ def pretrain_on_treatment(args, model):
                                                 num_warmup_steps=args.warmup_steps,
                                                 num_training_steps=total_steps)
     
+    logger.info("\nARGS: {}".format(args))
+    
     # Train model
     train(args, model, optimizer, scheduler, validation_dataset, train_dataset)
     
     
-    # # Evaluate model
-    # test_loss, test_accuracy = eval_model(args, model, test_dataloader)
-    # print(f'Test loss: {test_loss} Test accuracy: {test_accuracy}')
-
-
+    # # Evaluate model on dev
+    # logger.info("\nRunning Evaluation on dev...")
+    # dev_loss, dev_accuracy = eval_model(args, model, validation_dataset)
+    # logger.info("Validation Loss: {} Validation Accuracy: {}".format(dev_loss, dev_accuracy))
+    
+    
+    # # Evaluate model on test
+    # logger.info("\nRunning Evaluation on test...")
+    # test_loss, test_accuracy = eval_model(args, model, test_dataset)
+    # logger.info("Test Loss: {} Test Accuracy: {}".format(test_loss, test_accuracy))
 
 def main():
-    parser = ArgumentParser()
-    parser.add_argument('--data_dir', type=Path, required=True)
-    parser.add_argument("--output_dir", type=Path, required=True)
-    parser.add_argument("--bert_model", type=str, required=False, default=BERT_PRETRAIN_MODEL,
-                        help="Bert pre-trained model")
-    parser.add_argument("--do_lower_case", action="store_true")
-    parser.add_argument("--reduce_memory", action="store_true",
-                        help="Store training data as on-disc memmaps to massively reduce memory usage")
-    parser.add_argument("--num_samples", type=int, required=False, default=51823)
-    parser.add_argument("--epochs", type=int, default=EPOCHS, help="Number of epochs to train for")
-    parser.add_argument("--local_rank",
-                        type=int,
-                        default=-1,
-                        help="local_rank for distributed training on gpus")
-    parser.add_argument("--no_cuda",
-                        action='store_true',
-                        help="Whether not to use CUDA when available")
-    parser.add_argument('--gradient_accumulation_steps',
-                        type=int,
-                        default=1,
-                        help="Number of updates steps to accumulate before performing a backward/update pass.")
-    parser.add_argument("--train_batch_size",
-                        default=BATCH_SIZE,
-                        type=int,
-                        help="Size of each batch.")
-    # parser.add_argument('--fp16',
-    #                     action='store_true',
-    #                     help="Whether to use 16-bit float precision instead of 32-bit")
-    # parser.add_argument('--loss_scale',
-    #                     type=float, default=0,
-    #                     help="Loss scaling to improve fp16 numeric stability. Only used when fp16 set to True.\n"
-    #                          "0 (default value): dynamic loss scaling.\n"
-    #                          "Positive power of 2: static loss scaling value.\n")
-    parser.add_argument("--warmup_steps",
-                        default=0,
-                        type=int,
-                        help="Linear warmup over warmup_steps.")
-    parser.add_argument("--adam_epsilon",
-                        default=1e-8,
-                        type=float,
-                        help="Epsilon for Adam optimizer.")
-    parser.add_argument("--learning_rate",
-                        default=1e-5,
-                        type=float,
-                        help="The initial learning rate for Adam.")
-
-    parser.add_argument("--corpus_type", type=str, required=False, default="")
-    args = parser.parse_args()
-    
-    
-    # args.output_dir = Path('/content/drive/MyDrive/ColabNotebooks/mlm_finetune_output')/ 'model'
-   
-    # args.output_dir = Path('mlm_finetune_output') / "model"
-    # args.data_dir = pathlib.Path('/content/drive/MyDrive/ColabNotebooks/mlm_prepare_data')
-    # args.data_dir = pathlib.Path('mlm_prepared_data_3')
     
     pretrain_on_treatment(args, BIOBERT_MODEL)
    

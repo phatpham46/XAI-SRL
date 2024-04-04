@@ -2,13 +2,11 @@
 import os
 import re
 import torch
-import spacy
 import pandas as pd
 from tqdm import tqdm
 from multiprocessing import Pool
 from sklearn.model_selection import train_test_split
-from mlm_utils.preprocess_functions import check_data_dir
-from mlm_utils.preprocess_functions import get_pos_tag_word
+from mlm_utils.preprocess_functions import get_pos_tag_word, get_word_list, check_data_dir
 from mlm_utils.model_utils import MLM_IGNORE_LABEL_IDX, VOCAB_SIZE, BATCH_SIZE, EPOCHS, MAX_SEQ_LEN, BERT_PRETRAIN_MODEL, NLP, TOKENIZER
 
 
@@ -212,12 +210,7 @@ def masking_sentence_word(words: list, input_ids: torch.tensor, offsets: list) -
     return masked_sentences, label_ids
 
 
-def get_word_list(text: str) -> list:
-    '''Function to get the list of words from a given text using spacy'''
-    
-    doc = NLP(text)
-    word_lst = [word.text for word in [token for token in doc]]
-    return word_lst
+
 
 def tokenize_csv_to_json(dataDir: str, wriDir: str) -> None:
     '''
