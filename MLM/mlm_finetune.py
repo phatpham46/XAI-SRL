@@ -434,8 +434,8 @@ def pretrain_on_treatment(args, model):
 
 def main():
     parser = ArgumentParser()
-    parser.add_argument('--pregenerated_data', type=Path, required=False)
-    parser.add_argument("--output_dir", type=Path, required=False)
+    parser.add_argument('--pregenerated_data', type=str, required=True)
+    parser.add_argument("--output_dir", type=str, required=True)
     parser.add_argument("--bert_model", type=str, required=False, default=BERT_PRETRAIN_MODEL,
                         help="Bert pre-trained model")
     parser.add_argument("--do_lower_case", action="store_true")
@@ -482,9 +482,11 @@ def main():
     parser.add_argument("--corpus_type", type=str, required=False, default="")
     args = parser.parse_args()
     
-    args.output_dir = Path('/content/drive/MyDrive/ColabNotebooks/mlm_finetune_output')/ 'model'
+    
+    # args.output_dir = Path('/content/drive/MyDrive/ColabNotebooks/mlm_finetune_output')/ 'model'
+   
     # args.output_dir = Path('mlm_finetune_output') / "model"
-    args.pregenerated_data = pathlib.Path('/content/drive/MyDrive/ColabNotebooks/mlm_prepare_data')
+    # args.pregenerated_data = pathlib.Path('/content/drive/MyDrive/ColabNotebooks/mlm_prepare_data')
     # args.pregenerated_data = pathlib.Path('mlm_prepared_data_3')
     
     pretrain_on_treatment(args, BIOBERT_MODEL)
