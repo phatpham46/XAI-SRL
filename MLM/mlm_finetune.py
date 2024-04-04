@@ -15,7 +15,7 @@ from collections import defaultdict
 from argparse import ArgumentParser
 from babel.dates import format_time
 from mlm_utils.custom_dataset import CustomDataset
-# sys.path.insert(1, '/content/SRLPredictionEasel')
+sys.path.insert(1, '/content/SRLPredictionEasel')
 from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data.distributed import DistributedSampler 
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
@@ -25,13 +25,14 @@ from mlm_utils.model_utils import BATCH_SIZE, EPOCHS, BIOBERT_MODEL, BERT_PRETRA
 from prepared_for_mlm import get_word_list, data_split, get_tokens_for_words, encode_text, decode_token
 
 
-sys.path.insert(1, '../')
-tb = SummaryWriter()
+# sys.path.insert(1, '../')
+# tb = SummaryWriter()
+tb = SummaryWriter("/content/SRLPredictionEasel/MLM/logs")
 
 
 
 
-def is_POS_match(b_input_id, b_logit_id, b_label_id):
+def is_POS_match(args, b_input_id, b_logit_id, b_label_id):
     '''
     Function to check if the POS tag of the masked token in the logits is the same as the POS tag of the masked token in the original text.
     Note: This function assumes that the logits are of shape # ([85, 28996]) 
@@ -70,7 +71,7 @@ def is_POS_match(b_input_id, b_logit_id, b_label_id):
         word_list = get_word_list(origin_text)
         word_dict = {i: torch.tensor(TOKENIZER.encode_plus(i,add_special_tokens = False)['input_ids'], dtype=torch.int64) for i in word_list}
 
-        pos_tag_id_origin = get_pos_tag_id(word_dict, pos_tag_origin, label_id)
+        pos_tag_id_origin = get_pos_tag_id(args, word_dict, pos_tag_origin, label_id)
         
         # "-============== PREDICTION =================="
         pred = [torch.argmax(logit_id[i]).item() for i in mask_index]
@@ -89,7 +90,7 @@ def is_POS_match(b_input_id, b_logit_id, b_label_id):
         word_dict_pred = {i: torch.tensor(TOKENIZER.encode_plus(i, add_special_tokens = False)['input_ids'], dtype=torch.int64) for i in pred_word_list}
        
         # get pos tag for all tokens of each word
-        pos_tag_id_pred = get_pos_tag_id(word_dict_pred, pos_tag_dict_pred, pred_id)
+        pos_tag_id_pred = get_pos_tag_id(args, word_dict_pred, pos_tag_dict_pred, pred_id)
        
         matching_term_tensor = torch.zeros_like(pos_tag_id_pred)
         
@@ -102,13 +103,13 @@ def is_POS_match(b_input_id, b_logit_id, b_label_id):
     return b_matching_term
 
 
-def custom_loss(b_logit_id, b_input_id, b_label_id):
+def custom_loss(args, b_logit_id, b_input_id, b_label_id):
    
     # Cross-entropy term
     b_cross_entropy_term = F.cross_entropy((1-b_logit_id).view(-1, TOKENIZER.vocab_size), b_label_id.view(-1), reduction='none')
    
     # Custom matching term
-    b_matching_term = torch.stack(is_POS_match(b_input_id, b_logit_id, b_label_id)).view(-1)
+    b_matching_term = torch.stack(is_POS_match(args, b_input_id, b_logit_id, b_label_id)).view(-1)
 
     # Combine terms
     b_loss = 0.5 * ((b_cross_entropy_term) + (1 - b_matching_term))
@@ -278,10 +279,15 @@ def train(args, model, optimizer, scheduler, val_dataset, train_dataset):
                 
                 # step 3: compute the loss
                 # loss = outputs.loss
-                loss = custom_loss(b_logit_id=outputs.logits, 
+                loss = custom_loss(args,b_logit_id=outputs.logits, 
                                    b_input_id=b_mask_input_id, 
                                    b_label_id=b_label_id)
                 print("Loss:", loss)
+                # visualize loss
+                tb.add_scalar('train loss', loss, global_step)
+                global_step += 1
+
+
                 if n_gpu > 1:
                     loss = loss.mean() # mean() to average on multi-gpu.
                 if args.gradient_accumulation_steps > 1:
@@ -307,8 +313,7 @@ def train(args, model, optimizer, scheduler, val_dataset, train_dataset):
                 
                 loss_batch = loss.item()
                 total_train_loss += (loss_batch - total_train_loss) / (batch_index + 1)
-                #accuracy = accuracy_score(b_labels_np, logits_np)
-                
+               
                 elapsed = 0
                 if batch_index % 50 == 0 and batch_index > 0:
                     elapsed = format_time(time.time() - t0)
@@ -477,10 +482,10 @@ def main():
     parser.add_argument("--corpus_type", type=str, required=False, default="")
     args = parser.parse_args()
     
-    # args.output_dir = Path('/content/drive/MyDrive/ColabNotebooks/mlm_finetune_output')/ 'model'
-    args.output_dir = Path('mlm_finetune_output') / "model"
-    # args.pregenerated_data = pathlib.Path('/content/drive/MyDrive/ColabNotebooks/mlm_prepare_data')
-    args.pregenerated_data = pathlib.Path('mlm_prepared_data_3')
+    args.output_dir = Path('/content/drive/MyDrive/ColabNotebooks/mlm_finetune_output')/ 'model'
+    # args.output_dir = Path('mlm_finetune_output') / "model"
+    args.pregenerated_data = pathlib.Path('/content/drive/MyDrive/ColabNotebooks/mlm_prepare_data')
+    # args.pregenerated_data = pathlib.Path('mlm_prepared_data_3')
     
     pretrain_on_treatment(args, BIOBERT_MODEL)
    

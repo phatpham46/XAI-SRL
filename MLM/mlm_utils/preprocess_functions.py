@@ -83,12 +83,13 @@ def pos_tag_mapping(pos_tag):
     else:
         return -1
 
-def get_pos_tag_id(word_dict, pos_tag_dict, label_id):
+def get_pos_tag_id(args, word_dict, pos_tag_dict, label_id):
     pos_tag_id = torch.full_like(label_id, fill_value=-1)
     
     for key in pos_tag_dict.keys():
         tokens = word_dict.get(key)
-        
+        device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
+        tokens = tokens.to(device)
         for i in range(len(label_id) - len(tokens) + 1):
             if torch.equal(torch.as_tensor(label_id[i:i+len(tokens)]).clone().detach(), torch.as_tensor(tokens).clone().detach()):
                
