@@ -15,6 +15,8 @@ from babel.dates import format_time
 from draft_loss import CustomLoss
 from mlm_utils.custom_dataset import CustomDataset
 sys.path.append('../')
+# sys.path.append('/content/SRLPredictionEasel')
+
 from logger_ import make_logger
 # sys.path.insert(1, '/content/SRLPredictionEasel')
 from torch.utils.tensorboard import SummaryWriter
@@ -102,7 +104,7 @@ def custom_loss(args, b_logit_id, b_input_id, b_label_id):
     return b_loss.mean()
 
 
-def eval_model(args, model, validation_dataloader):
+def eval_model(args, model, loss_fn, validation_dataloader):
     if args.local_rank == -1 or args.no_cuda:
         device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
         n_gpu = torch.cuda.device_count()
@@ -116,15 +118,11 @@ def eval_model(args, model, validation_dataloader):
     model.to(device)
     
     t0 = time.time()
-    avg_eval_loss_batch = 0
-    avg_eval_accuracy_batch = 0
+    
     total_loss = 0
-    total_accuracy = 0
     model.eval()
-    
-    m = tf.metrics.Accuracy()
-    
-    for batch_index, batch in enumerate(validation_dataloader):   
+    batch_num=0
+    for batch in validation_dataloader:   
          
         batch = tuple(t.to(device) for t in batch)
         b_input_ids, b_input_attention_mask, b_labels = batch  
@@ -133,22 +131,18 @@ def eval_model(args, model, validation_dataloader):
         with torch.no_grad():   
             output = model(b_input_ids, attention_mask=b_input_attention_mask, labels=b_labels) 
             
-            # Assuming b_labels and logits are NumPy arrays
-            m.update_state(b_labels.cpu(), torch.argmax(output.logits, dim=-1).cpu())
-        
         # step 2. compute the loss
-        loss_batch = output.loss.item()
+        loss_batch = loss_fn(output.logits, b_input_ids, b_labels)
+        if n_gpu > 1:
+            loss_batch = loss_batch.mean() # mean() to average on multi-gpu.
+        
         total_loss += loss_batch
-        avg_eval_loss_batch += (loss_batch - avg_eval_loss_batch) / (batch_index + 1)
-        
-        # step 3: compute the accuracy
-        accuracy = m.result().numpy()
-        avg_eval_accuracy_batch += (accuracy - avg_eval_accuracy_batch) / (batch_index + 1)
-        total_accuracy += accuracy
-        
-    avg_eval_loss = total_loss / len(validation_dataloader)
-    avg_eval_accuracy = total_accuracy / len(validation_dataloader) 
-    return (avg_eval_loss, avg_eval_accuracy)
+        batch_num += 1
+      
+    avg_eval_loss = total_loss / batch_num
+    val_time = time.time() - t0
+    logger.info("  Average validate loss: {:} Training epoch took: {:}".format(avg_eval_loss, val_time))
+    return avg_eval_loss
 
 def visualize_acc(loss_dict):
     '''
@@ -181,7 +175,19 @@ def visualize_acc(loss_dict):
     plt.legend()
     plt.grid(True)
     plt.show()
+   
+
+def save_model(model, optimizer, scheduler, globalStep, savePath) :
+    modelStateDict = {k : v.cpu() for k,v in model.state_dict().items()}
+    toSave = {'model_state_dict' :modelStateDict,
+            'optimizer_state' : optimizer.state_dict(),
+            'scheduler_state' : scheduler.state_dict(),
+            'global_step' : globalStep}
+    
+    torch.save(toSave, savePath)
+    logger.info('model saved in {} global step at {}'.format(globalStep, savePath))
         
+            
 def train(args, model, optimizer, scheduler, loss_fn, val_dataset, train_dataset):
    
    
@@ -224,8 +230,6 @@ def train(args, model, optimizer, scheduler, loss_fn, val_dataset, train_dataset
     
     for epoch in range(args.epochs):
         
-        
-        
         logger.info('\n================= EPOCH {:} / {:} ================='.format(epoch + 1, args.epochs))
 
         num_train_steps = math.ceil(args.num_samples / args.train_batch_size) * args.epochs 
@@ -242,7 +246,15 @@ def train(args, model, optimizer, scheduler, loss_fn, val_dataset, train_dataset
             batch_size=args.train_batch_size, 
             device=device)
         
+        val_dataloader = generate_batches(
+            local_rank= args.local_rank, 
+            dataset=val_dataset, 
+            batch_size=args.train_batch_size, 
+            device=device)
+        
+        
         total_train_loss  = 0 
+        total_val_loss = 0
         batch_num = 0
         t0 = time.time()
         with tqdm(total=len(train_dataloader),position=epoch, desc=f"Epoch {epoch}") as progress:
@@ -265,12 +277,12 @@ def train(args, model, optimizer, scheduler, loss_fn, val_dataset, train_dataset
                 #                    b_input_id=b_mask_input_id, 
                 #                    b_label_id=b_label_id)
                 loss = loss_fn(outputs.logits, b_mask_input_id, b_label_id)
-                
+              
                 if n_gpu > 1:
                     loss = loss.mean() # mean() to average on multi-gpu.
-                
+                    
+                    
                 total_train_loss += loss.item()
-                
                 
                 # step 4: use loss to produce gradients 
                 loss.backward()
@@ -284,27 +296,30 @@ def train(args, model, optimizer, scheduler, loss_fn, val_dataset, train_dataset
                 global_step += 1
                 batch_num += 1
                 progress.update(1)
-           
+
+        training_time = format_time(time.time() - t0)
+        # validation
+        avg_val_loss = eval_model(args, model, loss_fn, val_dataloader)        
             
-            # Average loss per epoch
-            avg_train_loss = total_train_loss / batch_num
+        # Average loss per epoch
+        avg_train_loss = total_train_loss / batch_num
+        
+        
+        # visualize loss
+        tb.add_scalar('train/val mlm loss', avg_train_loss, epoch)
+        tb.add_scalar('train/val mlm loss', avg_val_loss, epoch)
+        
+        logger.info("  Average training loss: {:} Training epoch took: {:}".format(avg_train_loss, training_time))
+        
+        # Save model after each epoch
+        if  epoch < args.epochs and (n_gpu > 1 and torch.distributed.get_rank() == 0 or n_gpu <= 1):
+            logger.info("** ** * Saving fine-tuned model ** ** * ")
+            epoch_output_dir = args.output_dir / f"mlm_epoch_{epoch}.pt"
+            epoch_output_dir.mkdir(parents=True, exist_ok=True)
             
-            # visualize loss
-            tb.add_scalar('train mlm loss', avg_train_loss, epoch)
-            training_time = format_time(time.time() - t0)
+            save_model(model, optimizer, scheduler, global_step, epoch_output_dir)
             
-            
-            print("  Average training loss: {:} Training epoch took: {:}".format(avg_train_loss, training_time))
-            
-            # Save model after each epoch
-            if  epoch < args.epochs and (n_gpu > 1 and torch.distributed.get_rank() == 0 or n_gpu <= 1):
-                logger.info("** ** * Saving fine-tuned model ** ** * ")
-                epoch_output_dir = args.output_dir / f"mlm_epoch_{epoch}"
-                epoch_output_dir.mkdir(parents=True, exist_ok=True)
-                
-                model.save_pretrained(epoch_output_dir)
-                
-                logger.info('model saved in {} global step at {}'.format(global_step, epoch_output_dir))
+            logger.info('model saved in {} global step at {}'.format(global_step, epoch_output_dir))
   
   
     # Save a trained model
