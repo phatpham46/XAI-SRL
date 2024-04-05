@@ -9,11 +9,13 @@ import matplotlib.pyplot as plt
 
 from tqdm import tqdm
 from pathlib import Path
-from logger_ import make_logger
 from collections import defaultdict
 from argparse import ArgumentParser
 from babel.dates import format_time
+from draft_loss import CustomLoss
 from mlm_utils.custom_dataset import CustomDataset
+sys.path.append('../')
+from logger_ import make_logger
 # sys.path.insert(1, '/content/SRLPredictionEasel')
 from torch.utils.tensorboard import SummaryWriter
 from transformers import get_linear_schedule_with_warmup 
@@ -44,10 +46,6 @@ def make_argument(parser):
     parser.add_argument("--no_cuda",
                         action='store_true',
                         help="Whether not to use CUDA when available")
-    parser.add_argument('--gradient_accumulation_steps',
-                        type=int,
-                        default=1,
-                        help="Number of updates steps to accumulate before performing a backward/update pass.")
     parser.add_argument("--train_batch_size",
                         default=BATCH_SIZE,
                         type=int,
@@ -89,75 +87,6 @@ logger.info("logger created.")
 
 
 
-def is_POS_match(args, b_input_id, b_logit_id, b_label_id):
-    '''
-    Function to check if the POS tag of the masked token in the logits is the same as the POS tag of the masked token in the original text.
-    Note: This function assumes that the logits are of shape # ([85, 28996]) 
-    lm_label_ids: shape (batch_size, sequence_length)
-    '''
-    '''cho 1 batch'''
-    
-    b_matching_term = []
-    for idx_sample in range(b_input_id.shape[0]):
-        
-        input_id = b_input_id[idx_sample]
-        logit_id = b_logit_id[idx_sample]
-        label_id = b_label_id[idx_sample]
-        
-        pred_id = input_id.clone() 
-        origin_input_id = input_id.clone()
-        
-        # Find the index of the masked token from lm_label_ids
-        mask_index = torch.where(label_id != -100)[0]
-        masked_idx_input = torch.where(input_id == TOKENIZER.mask_token_id)[0]
-        
-        # make sure masked_idx_input and mask_index are the same using asser
-        assert torch.equal(mask_index, masked_idx_input), "Masked index and label index are not the same."
-        origin_input_id[masked_idx_input] = label_id[mask_index] 
-        
-        
-        # "================= ORIGINAL ============= ")
-        # get pos tag of origin text
-        origin_text = decode_token(origin_input_id, skip_special_tokens=True) 
-        
-        # Get masked word in the sentence
-        masked_word = decode_token(origin_input_id[mask_index])
-        
-        pos_tag_origin = get_pos_tag_word(masked_word, origin_text)
-        
-        word_list = get_word_list(origin_text)
-        word_dict = {i: torch.tensor(TOKENIZER.encode_plus(i,add_special_tokens = False)['input_ids'], dtype=torch.int64) for i in word_list}
-
-        pos_tag_id_origin = get_pos_tag_id(args, word_dict, pos_tag_origin, label_id)
-        
-        # "-============== PREDICTION =================="
-        pred = [torch.argmax(logit_id[i]).item() for i in mask_index]
-
-        # Replace the index of the masked token with the list of predicted tokens
-        for i in mask_index:
-            pred_id[i] = pred[i - mask_index[0]]
-         
-         
-        pos_tag_dict_pred = get_pos_tag_word(decode_token(pred), decode_token(pred_id, skip_special_tokens=True) )
-        
-        pred_sentence = decode_token(pred_id, skip_special_tokens=True)
-       
-        pred_word_list = get_word_list(pred_sentence)
-        
-        word_dict_pred = {i: torch.tensor(TOKENIZER.encode_plus(i, add_special_tokens = False)['input_ids'], dtype=torch.int64) for i in pred_word_list}
-       
-        # get pos tag for all tokens of each word
-        pos_tag_id_pred = get_pos_tag_id(args, word_dict_pred, pos_tag_dict_pred, pred_id)
-       
-        matching_term_tensor = torch.zeros_like(pos_tag_id_pred)
-        
-        matching_term_tensor[mask_index] = torch.where(pos_tag_id_pred[mask_index] == pos_tag_id_origin[mask_index], 
-                                       torch.tensor(1), 
-                                       torch.tensor(0))
-
-        b_matching_term.append(matching_term_tensor)
-        
-    return b_matching_term
 
 
 def custom_loss(args, b_logit_id, b_input_id, b_label_id):
@@ -253,7 +182,7 @@ def visualize_acc(loss_dict):
     plt.grid(True)
     plt.show()
         
-def train(args, model, optimizer, scheduler, val_dataset, train_dataset):
+def train(args, model, optimizer, scheduler, loss_fn, val_dataset, train_dataset):
    
    
     if args.local_rank == -1 or args.no_cuda:
@@ -265,10 +194,6 @@ def train(args, model, optimizer, scheduler, val_dataset, train_dataset):
         n_gpu = 1       
     
     logger.info("device: {} n_gpu: {}".format(device, n_gpu))
-
-
-    if args.gradient_accumulation_steps < 1:
-        raise ValueError("Invalid gradient_accumulation_steps parameter: {}, should be >= 1".format(args.gradient_accumulation_steps))
 
     if args.output_dir.is_dir() and list(args.output_dir.iterdir()):
         logger.warning(f"Output directory ({args.output_dir}) already exists and is not empty!")
@@ -291,21 +216,22 @@ def train(args, model, optimizer, scheduler, val_dataset, train_dataset):
     if n_gpu > 1:
         model = torch.nn.DataParallel(model)
 
-    
+    args.num_samples = len(train_dataset)
     logger.info("***** Running training *****")
     logger.info(f" Num examples = {args.num_samples}")
    
     loss_dict = defaultdict(list)
-
+    
     for epoch in range(args.epochs):
-        avg_train_loss  = 0 # running loss
-        avg_train_acc = 0  # running accuracy
+        
+        
+        
         logger.info('\n================= EPOCH {:} / {:} ================='.format(epoch + 1, args.epochs))
 
-        num_train_steps = math.ceil(args.num_samples / args.train_batch_size) * args.epochs // args.gradient_accumulation_steps
+        num_train_steps = math.ceil(args.num_samples / args.train_batch_size) * args.epochs 
 
-        total_steps = int(num_train_steps * args.gradient_accumulation_steps / args.epochs)
-        t0 = time.time()
+        total_steps = int(num_train_steps / args.epochs)
+        
         model.train()
         print('put model in train mode')
 
@@ -316,8 +242,11 @@ def train(args, model, optimizer, scheduler, val_dataset, train_dataset):
             batch_size=args.train_batch_size, 
             device=device)
         
-        with tqdm(total=total_steps,position=epoch, desc=f"Epoch {epoch}") as progress:
-            for batch_index, batch in enumerate(train_dataloader):
+        total_train_loss  = 0 
+        batch_num = 0
+        t0 = time.time()
+        with tqdm(total=len(train_dataloader),position=epoch, desc=f"Epoch {epoch}") as progress:
+            for batch in train_dataloader:
                 
                 batch = tuple(t.to(device) for t in batch)  
                 b_mask_input_id, b_attention_mask, b_token_type_id, b_label_id = batch 
@@ -332,49 +261,41 @@ def train(args, model, optimizer, scheduler, val_dataset, train_dataset):
                                 labels=b_label_id) 
                 
                 # step 3: compute the loss
-                loss = custom_loss(args,b_logit_id=outputs.logits, 
-                                   b_input_id=b_mask_input_id, 
-                                   b_label_id=b_label_id)
-                
+                # loss = custom_loss(args,b_logit_id=outputs.logits, 
+                #                    b_input_id=b_mask_input_id, 
+                #                    b_label_id=b_label_id)
+                loss = loss_fn(outputs.logits, b_mask_input_id, b_label_id)
                 
                 if n_gpu > 1:
                     loss = loss.mean() # mean() to average on multi-gpu.
-                if args.gradient_accumulation_steps > 1:
-                    loss = loss / args.gradient_accumulation_steps
+                
+                total_train_loss += loss.item()
+                
                 
                 # step 4: use loss to produce gradients 
                 loss.backward()
                 
+                
                 # step 5: use optimizer to take gradient step
-                if (batch_index + 1) % args.gradient_accumulation_steps == 0:
-                    optimizer.step()
-                    scheduler.step() 
-                    optimizer.zero_grad()
-                
-                # -----------------------------------------------------------
-                # Compute the accuracy
-                logits = outputs.logits
-                
-                m.update_state(b_label_id.cpu(), torch.argmax(logits, dim=-1).cpu())
-                m_f1.update_state(b_label_id.cpu(), torch.argmax(logits, dim=-1).cpu())
-                
-                accuracy_batch = m.result().numpy()
-                loss_batch = loss.item()
-                
-                avg_train_loss += (loss_batch - avg_train_loss) / (batch_index + 1)
-                
-                elapsed = 0
-                if batch_index % 100 == 0 and batch_index > 0 :
-                    elapsed = format_time(time.time() - t0)
-                    logger.info('  Batch {:>5,}  of  {:>5,}.    Elapsed: {:}. loss is {:} accuracy is {:}'.format(batch_index, len(train_dataloader), elapsed, avg_train_loss, accuracy_batch))
-                    
-                
-                    # visualize loss
-                    tb.add_scalar('train mlm loss', loss, global_step)
-                
+                optimizer.step()
+                scheduler.step() 
+                optimizer.zero_grad()
+            
                 global_step += 1
+                batch_num += 1
                 progress.update(1)
-              
+           
+            
+            # Average loss per epoch
+            avg_train_loss = total_train_loss / batch_num
+            
+            # visualize loss
+            tb.add_scalar('train mlm loss', avg_train_loss, epoch)
+            training_time = format_time(time.time() - t0)
+            
+            
+            print("  Average training loss: {:} Training epoch took: {:}".format(avg_train_loss, training_time))
+            
             # Save model after each epoch
             if  epoch < args.epochs and (n_gpu > 1 and torch.distributed.get_rank() == 0 or n_gpu <= 1):
                 logger.info("** ** * Saving fine-tuned model ** ** * ")
@@ -384,38 +305,13 @@ def train(args, model, optimizer, scheduler, val_dataset, train_dataset):
                 model.save_pretrained(epoch_output_dir)
                 
                 logger.info('model saved in {} global step at {}'.format(global_step, epoch_output_dir))
-                 
-                
-            # Evaluate for each epoch
-            
-            avg_train_acc += (accuracy_batch - avg_train_acc) / (batch_index + 1)
-            
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            loss_dict["epoch"].append(epoch)
-            loss_dict["batch_id"].append(batch_index)
-            loss_dict["mlm_loss"].append(avg_train_loss)
-            loss_dict["mlm_acc"].append(avg_train_acc)
-               
-            
-            # avg_train_loss = total_train_loss / len(train_dataloader)
-            # avg_train_accuracy = total_train_accuracy / len(train_dataloader)
-            training_time = format_time(time.time() - t0)
-            print("  Average training loss: {:} Average training accuracy: {:} Training epoch took: {:}".format(avg_train_loss, avg_train_acc, training_time))
-            
-            
-            
-
-    
+  
+  
     # Save a trained model
     if n_gpu > 1 and (torch.distributed.get_rank() == 0 or n_gpu <=1):
         logger.info("** ** * Saving fine-tuned model ** ** * ")
         model.save_pretrained(args.output_dir)
-    
-        # tokenizer.save_pretrained(args.output_dir)
-        # df = pd.DataFrame.from_dict(loss_dict)
-        # df.to_csv(args.output_dir/"losses.csv")
-
-
+ 
 
 def pretrain_on_treatment(args, model):
    
@@ -433,8 +329,8 @@ def pretrain_on_treatment(args, model):
         file_name='test_mlm.json')
     
     # Prepare parameters
-    num_train_steps = math.ceil(args.num_samples / args.train_batch_size) * args.epochs // args.gradient_accumulation_steps
-    total_steps = int(num_train_steps * args.gradient_accumulation_steps / args.epochs)
+    num_train_steps = math.ceil(args.num_samples / args.train_batch_size) * args.epochs 
+    total_steps = int(num_train_steps / args.epochs)
     print("Num train optimization steps: ", total_steps)
     
     
@@ -452,10 +348,13 @@ def pretrain_on_treatment(args, model):
                                                 num_warmup_steps=args.warmup_steps,
                                                 num_training_steps=total_steps)
     
+    # Prepare loss 
+    loss_fn = CustomLoss()
+    
     logger.info("\nARGS: {}".format(args))
     
     # Train model
-    train(args, model, optimizer, scheduler, validation_dataset, train_dataset)
+    train(args, model, optimizer, scheduler,loss_fn, validation_dataset, train_dataset)
     
     
     # # Evaluate model on dev
@@ -470,7 +369,7 @@ def pretrain_on_treatment(args, model):
     # logger.info("Test Loss: {} Test Accuracy: {}".format(test_loss, test_accuracy))
 
 def main():
-    
+    # python mlm_finetune.py --data_dir mlm_prepared_data_3/ --output_dir mlm_finetune_output_3
     pretrain_on_treatment(args, BIOBERT_MODEL)
    
 
