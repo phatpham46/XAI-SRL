@@ -98,6 +98,7 @@ logger.info("logger created.")
 def eval_model(args, model, epoch, loss_fn=CustomLoss, validation_dataloader=CustomDataset, wrt_path=None):
     if args.local_rank == -1 or args.no_cuda:
         device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
+       
         n_gpu = torch.cuda.device_count()
     else:
         torch.cuda.set_device(args.local_rank)
@@ -317,7 +318,7 @@ def train(args, model, optimizer, scheduler, loss_fn, val_dataset, train_dataset
         if  avg_val_loss < min_val_loss and epoch < args.epochs and (n_gpu > 1 and torch.distributed.get_rank() == 0 or n_gpu <= 1):
             logger.info("** ** * Saving fine-tuned model ** ** * ")
             epoch_output_dir = args.output_dir / f"mlm_epoch_{epoch}.pt"
-            epoch_output_dir.mkdir(parents=True, exist_ok=True)
+            # epoch_output_dir.mkdir(parents=True, exist_ok=True)
             
             save_model(model, optimizer, scheduler, global_step, epoch_output_dir)
             
