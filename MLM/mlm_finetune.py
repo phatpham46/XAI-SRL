@@ -105,8 +105,6 @@ def eval_model(args, model, epoch, loss_fn=CustomLoss, validation_dataloader=Cus
         device = torch.device("cuda", args.local_rank)
         n_gpu = 1
         
-    print("Running Validation...")
-    
     model.to(device)
     
     t0 = time.time()
@@ -311,7 +309,7 @@ def train(args, model, optimizer, scheduler, loss_fn, val_dataset, train_dataset
         
         
         # Testing model
-        logger.info("\nRunning Evaluation on test... at {}".format(epoch))
+        logger.info("\nRunning Evaluation on test... at epoch {}".format(epoch))
         test_loss = eval_model(args, model, epoch, loss_fn, test_dataloader, wrt_path = "test_predictions_mlm")
         
         # Save model after each epoch
