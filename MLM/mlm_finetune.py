@@ -16,11 +16,14 @@ from argparse import ArgumentParser
 from babel.dates import format_time
 from draft_loss import CustomLoss
 from mlm_utils.custom_dataset import CustomDataset
-sys.path.append('../')
+# sys.path.append('../')
 # sys.path.append('/content/SRLPredictionEasel')
+sys.path.append('/kaggle/working/SRLPredictionEasel')
 
 from logger_ import make_logger
 # sys.path.insert(1, '/content/SRLPredictionEasel')
+# sys.path.insert(1, '../')
+sys.path.insert(1, '/kaggle/working/SRLPredictionEasel')
 from torch.utils.tensorboard import SummaryWriter
 from transformers import get_linear_schedule_with_warmup 
 from mlm_utils.preprocess_functions import get_pos_tag_word, get_pos_tag_id, generate_batches
@@ -30,9 +33,9 @@ from prepared_for_mlm import get_word_list, decode_token
 from datetime import datetime
 
 
-sys.path.insert(1, '../')
-tb = SummaryWriter()
-# tb = SummaryWriter("/content/SRLPredictionEasel/MLM/logs_mlm")
+# tb = SummaryWriter()
+# tb = SummaryWriter("/content/drive/MyDrive/ColabNotebooks/logs_mlm")
+tb = SummaryWriter("/kaggle/working/logs_mlm")
 
 def make_argument(parser):
     parser.add_argument('--data_dir', type=Path, required=True)
@@ -92,7 +95,7 @@ logger = make_logger(name = "mlm_finetune", debugMode=args.debug_mode,
 logger.info("logger created.")
 
 
-def eval_model(args, model, epoch=None, loss_fn=CustomLoss, validation_dataloader=CustomDataset, wrt_path=None):
+def eval_model(args, model, epoch, loss_fn=CustomLoss, validation_dataloader=CustomDataset, wrt_path=None):
     if args.local_rank == -1 or args.no_cuda:
         device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
         n_gpu = torch.cuda.device_count()
@@ -111,81 +114,54 @@ def eval_model(args, model, epoch=None, loss_fn=CustomLoss, validation_dataloade
     model.eval()
     batch_num=0
     numStep = math.ceil(len(validation_dataloader)/BATCH_SIZE)
-    all_pred_pos_tag_is = [ [] for _ in range(numStep)]
-    all_origin_pos_tag_id = [ [] for _ in range(numStep)]
-    all_pred_id = [ [] for _ in range(numStep)]
-    all_origin_id = [ [] for _ in range(numStep)]
+    all_pred_pos_tag_is = [ [] for _ in range(1)]
+    all_origin_pos_tag_id = [ [] for _ in range(1)]
+    all_pred_id = [ [] for _ in range(1)]
+    all_origin_id = [ [] for _ in range(1)]
+    for batch in tqdm(validation_dataloader, total=numStep, desc = 'Eval'):
+      
+      batch = tuple(t.to(device) for t in batch)
+      b_input_ids, b_input_attention_mask, b_token_type_id, b_labels = batch
+
+      
+      # step 1. compute the output    
+      with torch.no_grad():   
+          output = model(b_input_ids, attention_mask=b_input_attention_mask, labels=b_labels) 
+      
+      # get pos tag prediction
+      
+      _, b_pred_id, b_pred_pos_tag_id, b_origin_pos_tag_id = is_POS_match(b_input_ids, output.logits, b_labels)   
+      all_pred_pos_tag_is.extend(b_pred_pos_tag_id)
+      all_origin_pos_tag_id.extend(b_origin_pos_tag_id)
+      all_pred_id.extend(b_pred_id)
+      all_origin_id.extend(b_input_ids)
+      
+     
+      # step 2. compute the loss
+      loss_batch = loss_fn(output.logits, b_input_ids, b_labels)
+      if n_gpu > 1:
+          loss_batch = loss_batch.mean() # mean() to average on multi-gpu.
+      
+      total_loss += loss_batch
+      batch_num += 1
+    ## debug
+    print("LEN ALL PRED POS TAG ID", len(all_pred_pos_tag_is))
+    print("LEN ALL origin POS TAG ID", len(all_origin_pos_tag_id))
+    print("LEN ALL all_pred_id", len(all_pred_id))
+    print("LEN ALL all_origin_id", len(all_origin_id))
     
-    for batch in tqdm(validation_dataloader, total=numStep, desc="Eval"):   
-         
-        batch = tuple(t.to(device) for t in batch)
-        b_input_ids, b_input_attention_mask, b_labels = batch  
-        
-        # step 1. compute the output    
-        with torch.no_grad():   
-            output = model(b_input_ids, attention_mask=b_input_attention_mask, labels=b_labels) 
-        
-        # get pos tag prediction
-        
-        _, b_pred_pos_tag_id, b_pred_id, b_origin_pos_tag_id = is_POS_match(b_input_ids, output.logits, b_labels)
-           
-        all_pred_pos_tag_is[batch_num].extend(b_pred_pos_tag_id)
-        all_origin_pos_tag_id[batch_num].extend(b_origin_pos_tag_id)
-        all_pred_id[batch_num].extend(b_pred_id)
-        all_origin_id[batch_num].extend(b_input_ids)
-        
-        # step 2. compute the loss
-        loss_batch = loss_fn(output.logits, b_input_ids, b_labels)
-        if n_gpu > 1:
-            loss_batch = loss_batch.mean() # mean() to average on multi-gpu.
-        
-        total_loss += loss_batch
-        batch_num += 1
-    
+    assert len(all_pred_pos_tag_is) == len(all_origin_pos_tag_id) == len(all_pred_id) == len(all_origin_id)
     avg_eval_loss = total_loss / batch_num
     val_time = time.time() - t0
-    logger.info("  Average validate loss: {:} Training epoch took: {:}".format(avg_eval_loss, val_time))
+    logger.info("  Average validate loss: {:} Training epoch took: {:} secs".format(avg_eval_loss, val_time))
     
     if args.pred_dir is not None and wrt_path is not None:
-        for i in range(len(all_pred_pos_tag_is)):
-            df = pd.DataFrame({"prediction_pos_tag_id" : all_pred_pos_tag_is[i], "label_pos_tag_id" : all_origin_pos_tag_id[i], 
-                               "prediction_id" : all_pred_id[i], "origin_id" : all_origin_id[i]})
-        savePath = os.path.join(args.pred_dir, "pred_mlm_{}_{}".format(wrt_path, epoch))
-        df.to_csv(savePath, sep = "\t", index = False)
+      df = pd.DataFrame({"prediction_pos_tag_id" : all_pred_pos_tag_is, "label_pos_tag_id" : all_origin_pos_tag_id, 
+                          "prediction_id" : all_pred_id, "origin_id" : all_origin_id})
+      
+      savePath = os.path.join(args.pred_dir, "pred_mlm_{}_{}".format(wrt_path, epoch))
+      df.to_csv(savePath, sep = "\t", index = False)
     return avg_eval_loss
-
-def visualize_acc(loss_dict):
-    '''
-    Function to visualize loss and accuracy for each epoch
-    Input:
-        dict: 
-    '''
-    
-    # Extract data
-    epochs = loss_dict["epoch"]
-    loss = loss_dict["mlm_loss"]
-    accuracy = loss_dict["mlm_acc"]
-
-    # Plotting loss
-    plt.figure(figsize=(10, 5))
-    plt.plot(epochs, loss, marker='o', label='MLM Loss')
-    plt.title('MLM Loss per Epoch')
-    plt.xlabel('Epoch')
-    plt.ylabel('Loss')
-    plt.legend()
-    plt.grid(True)
-    plt.show()
-
-    # Plotting accuracy
-    plt.figure(figsize=(10, 5))
-    plt.plot(epochs, accuracy, marker='o', color='r', label='MLM Accuracy')
-    plt.title('MLM Accuracy per Epoch')
-    plt.xlabel('Epoch')
-    plt.ylabel('Accuracy')
-    plt.legend()
-    plt.grid(True)
-    plt.show()
-   
 
 def save_model(model, optimizer, scheduler, globalStep, savePath) :
     modelStateDict = {k : v.cpu() for k,v in model.state_dict().items()}
@@ -247,7 +223,7 @@ def train(args, model, optimizer, scheduler, loss_fn, val_dataset, train_dataset
     
     for epoch in range(args.epochs):
         
-        logger.info('\n================= EPOCH {:} / {:} ================='.format(epoch + 1, args.epochs))
+        logger.info('\n================= EPOCH {:} ================='.format(epoch))
 
 
         model.train()
@@ -322,8 +298,8 @@ def train(args, model, optimizer, scheduler, loss_fn, val_dataset, train_dataset
         avg_train_loss = total_train_loss / batch_num
         
         # validation
-        logger.info("\nRunning Evaluation on validation... at {}".format(epoch))
-        avg_val_loss = eval_model(args, model, epoch, loss_fn, val_dataloader)        
+        logger.info("\nRunning Evaluation on validation... at epoch {}".format(epoch))
+        avg_val_loss = eval_model(args, model, epoch, loss_fn, val_dataloader, wrt_path=None)        
             
         logger.info("  Average training loss: {:} Training epoch took: {:}".format(avg_train_loss, training_time))
         
