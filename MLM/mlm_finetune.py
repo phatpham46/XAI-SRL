@@ -1,5 +1,7 @@
 import math
 import time
+
+import pandas as pd
 import torch
 import sys
 import os
@@ -23,17 +25,19 @@ from torch.utils.tensorboard import SummaryWriter
 from transformers import get_linear_schedule_with_warmup 
 from mlm_utils.preprocess_functions import get_pos_tag_word, get_pos_tag_id, generate_batches
 from mlm_utils.model_utils import BATCH_SIZE, EPOCHS, BIOBERT_MODEL, BERT_PRETRAIN_MODEL, TOKENIZER
+from draft_loss import is_POS_match
 from prepared_for_mlm import get_word_list, decode_token
 from datetime import datetime
 
 
 sys.path.insert(1, '../')
 tb = SummaryWriter()
-# tb = SummaryWriter("/content/SRLPredictionEasel/MLM/logs")
+# tb = SummaryWriter("/content/SRLPredictionEasel/MLM/logs_mlm")
 
 def make_argument(parser):
     parser.add_argument('--data_dir', type=Path, required=True)
     parser.add_argument("--output_dir", type=Path, required=True)
+    parser.add_argument("--pred_dir", type=Path, required=True)
     parser.add_argument("--bert_model", type=str, required=False, default=BERT_PRETRAIN_MODEL,
                         help="Bert pre-trained model")
     parser.add_argument("--do_lower_case", action="store_true")
@@ -88,23 +92,7 @@ logger = make_logger(name = "mlm_finetune", debugMode=args.debug_mode,
 logger.info("logger created.")
 
 
-
-
-
-def custom_loss(args, b_logit_id, b_input_id, b_label_id):
-   
-    # Cross-entropy term
-    b_cross_entropy_term = F.cross_entropy((1-b_logit_id).view(-1, TOKENIZER.vocab_size), b_label_id.view(-1), reduction='none')
-   
-    # Custom matching term
-    b_matching_term = torch.stack(is_POS_match(args, b_input_id, b_logit_id, b_label_id)).view(-1)
-
-    # Combine terms
-    b_loss = 0.5 * ((b_cross_entropy_term) + (1 - b_matching_term))
-    return b_loss.mean()
-
-
-def eval_model(args, model, loss_fn, validation_dataloader):
+def eval_model(args, model, epoch=None, loss_fn=CustomLoss, validation_dataloader=CustomDataset, wrt_path=None):
     if args.local_rank == -1 or args.no_cuda:
         device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
         n_gpu = torch.cuda.device_count()
@@ -122,7 +110,13 @@ def eval_model(args, model, loss_fn, validation_dataloader):
     total_loss = 0
     model.eval()
     batch_num=0
-    for batch in validation_dataloader:   
+    numStep = math.ceil(len(validation_dataloader)/BATCH_SIZE)
+    all_pred_pos_tag_is = [ [] for _ in range(numStep)]
+    all_origin_pos_tag_id = [ [] for _ in range(numStep)]
+    all_pred_id = [ [] for _ in range(numStep)]
+    all_origin_id = [ [] for _ in range(numStep)]
+    
+    for batch in tqdm(validation_dataloader, total=numStep, desc="Eval"):   
          
         batch = tuple(t.to(device) for t in batch)
         b_input_ids, b_input_attention_mask, b_labels = batch  
@@ -130,7 +124,16 @@ def eval_model(args, model, loss_fn, validation_dataloader):
         # step 1. compute the output    
         with torch.no_grad():   
             output = model(b_input_ids, attention_mask=b_input_attention_mask, labels=b_labels) 
-            
+        
+        # get pos tag prediction
+        
+        _, b_pred_pos_tag_id, b_pred_id, b_origin_pos_tag_id = is_POS_match(b_input_ids, output.logits, b_labels)
+           
+        all_pred_pos_tag_is[batch_num].extend(b_pred_pos_tag_id)
+        all_origin_pos_tag_id[batch_num].extend(b_origin_pos_tag_id)
+        all_pred_id[batch_num].extend(b_pred_id)
+        all_origin_id[batch_num].extend(b_input_ids)
+        
         # step 2. compute the loss
         loss_batch = loss_fn(output.logits, b_input_ids, b_labels)
         if n_gpu > 1:
@@ -138,10 +141,17 @@ def eval_model(args, model, loss_fn, validation_dataloader):
         
         total_loss += loss_batch
         batch_num += 1
-      
+    
     avg_eval_loss = total_loss / batch_num
     val_time = time.time() - t0
     logger.info("  Average validate loss: {:} Training epoch took: {:}".format(avg_eval_loss, val_time))
+    
+    if args.pred_dir is not None and wrt_path is not None:
+        for i in range(len(all_pred_pos_tag_is)):
+            df = pd.DataFrame({"prediction_pos_tag_id" : all_pred_pos_tag_is[i], "label_pos_tag_id" : all_origin_pos_tag_id[i], 
+                               "prediction_id" : all_pred_id[i], "origin_id" : all_origin_id[i]})
+        savePath = os.path.join(args.pred_dir, "pred_mlm_{}_{}".format(wrt_path, epoch))
+        df.to_csv(savePath, sep = "\t", index = False)
     return avg_eval_loss
 
 def visualize_acc(loss_dict):
@@ -188,8 +198,7 @@ def save_model(model, optimizer, scheduler, globalStep, savePath) :
     logger.info('model saved in {} global step at {}'.format(globalStep, savePath))
         
             
-def train(args, model, optimizer, scheduler, loss_fn, val_dataset, train_dataset):
-   
+def train(args, model, optimizer, scheduler, loss_fn, val_dataset, train_dataset, test_dataset):
    
     if args.local_rank == -1 or args.no_cuda:
         device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
@@ -206,10 +215,15 @@ def train(args, model, optimizer, scheduler, loss_fn, val_dataset, train_dataset
         
     args.output_dir.mkdir(parents=True, exist_ok=True)
     
-    total_time = time.time()
-    train_steps = 0 # across all samples
-    global_step = 0 # across all batches
+    if args.pred_dir.is_dir() and list(args.pred_dir.iterdir()):
+        logger.warning(f"Prediction directory ({args.pred_dir}) already exists and is not empty!")
+        
+    args.pred_dir.mkdir(parents=True, exist_ok=True)
     
+    # assign min threshold with max value
+    min_val_loss = float('inf')
+    
+    global_step = 0 # across all batches
     
     m = tf.metrics.Accuracy()
     m_f1 = tf.metrics.F1Score()
@@ -226,16 +240,16 @@ def train(args, model, optimizer, scheduler, loss_fn, val_dataset, train_dataset
     logger.info("***** Running training *****")
     logger.info(f" Num examples = {args.num_samples}")
    
-    loss_dict = defaultdict(list)
+   
+    
+    num_train_steps = math.ceil(args.num_samples / args.train_batch_size) * args.epochs 
+    logger.info("Num train optimization steps: {}".format(num_train_steps))
     
     for epoch in range(args.epochs):
         
         logger.info('\n================= EPOCH {:} / {:} ================='.format(epoch + 1, args.epochs))
 
-        num_train_steps = math.ceil(args.num_samples / args.train_batch_size) * args.epochs 
 
-        total_steps = int(num_train_steps / args.epochs)
-        
         model.train()
         print('put model in train mode')
 
@@ -252,9 +266,14 @@ def train(args, model, optimizer, scheduler, loss_fn, val_dataset, train_dataset
             batch_size=args.train_batch_size, 
             device=device)
         
-        
+        test_dataloader = generate_batches(
+            local_rank= args.local_rank, 
+            dataset=test_dataset, 
+            batch_size=args.train_batch_size, 
+            device=device
+        )
         total_train_loss  = 0 
-        total_val_loss = 0
+      
         batch_num = 0
         t0 = time.time()
         with tqdm(total=len(train_dataloader),position=epoch, desc=f"Epoch {epoch}") as progress:
@@ -298,35 +317,38 @@ def train(args, model, optimizer, scheduler, loss_fn, val_dataset, train_dataset
                 progress.update(1)
 
         training_time = format_time(time.time() - t0)
-        # validation
-        avg_val_loss = eval_model(args, model, loss_fn, val_dataloader)        
-            
+        
         # Average loss per epoch
         avg_train_loss = total_train_loss / batch_num
         
+        # validation
+        logger.info("\nRunning Evaluation on validation... at {}".format(epoch))
+        avg_val_loss = eval_model(args, model, epoch, loss_fn, val_dataloader)        
+            
+        logger.info("  Average training loss: {:} Training epoch took: {:}".format(avg_train_loss, training_time))
         
         # visualize loss
+        logger.info("Visualizing loss of training and valuating set.. at epoch {}".format(epoch))
         tb.add_scalar('train/val mlm loss', avg_train_loss, epoch)
         tb.add_scalar('train/val mlm loss', avg_val_loss, epoch)
         
-        logger.info("  Average training loss: {:} Training epoch took: {:}".format(avg_train_loss, training_time))
+        
+        # Testing model
+        logger.info("\nRunning Evaluation on test... at {}".format(epoch))
+        test_loss = eval_model(args, model, epoch, loss_fn, test_dataloader, wrt_path = "test_predictions_mlm")
         
         # Save model after each epoch
-        if  epoch < args.epochs and (n_gpu > 1 and torch.distributed.get_rank() == 0 or n_gpu <= 1):
+        if  avg_val_loss < min_val_loss and epoch < args.epochs and (n_gpu > 1 and torch.distributed.get_rank() == 0 or n_gpu <= 1):
             logger.info("** ** * Saving fine-tuned model ** ** * ")
             epoch_output_dir = args.output_dir / f"mlm_epoch_{epoch}.pt"
             epoch_output_dir.mkdir(parents=True, exist_ok=True)
             
             save_model(model, optimizer, scheduler, global_step, epoch_output_dir)
             
+            min_val_loss = avg_val_loss
             logger.info('model saved in {} global step at {}'.format(global_step, epoch_output_dir))
   
-  
-    # Save a trained model
-    if n_gpu > 1 and (torch.distributed.get_rank() == 0 or n_gpu <=1):
-        logger.info("** ** * Saving fine-tuned model ** ** * ")
-        model.save_pretrained(args.output_dir)
- 
+
 
 def pretrain_on_treatment(args, model):
    
@@ -369,7 +391,8 @@ def pretrain_on_treatment(args, model):
     logger.info("\nARGS: {}".format(args))
     
     # Train model
-    train(args, model, optimizer, scheduler,loss_fn, validation_dataset, train_dataset)
+    train(args, model, optimizer, scheduler, loss_fn, validation_dataset, train_dataset, test_dataset)
+    
     
     
     # # Evaluate model on dev
@@ -384,7 +407,7 @@ def pretrain_on_treatment(args, model):
     # logger.info("Test Loss: {} Test Accuracy: {}".format(test_loss, test_accuracy))
 
 def main():
-    # python mlm_finetune.py --data_dir mlm_prepared_data_3/ --output_dir mlm_finetune_output_3
+    # python mlm_finetune.py --data_dir mlm_prepared_data_3/ --output_dir mlm_finetune_output_3 --pred_dir 
     pretrain_on_treatment(args, BIOBERT_MODEL)
    
 

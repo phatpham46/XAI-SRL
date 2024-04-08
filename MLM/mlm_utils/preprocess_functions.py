@@ -114,7 +114,14 @@ def pos_tag_mapping(pos_tag):
     else:
         return -1
 
-def get_pos_tag_id(word_dict, pos_tag_dict, label_id):
+def get_pos_tag_id(word_dict:dict , pos_tag_dict: dict, label_id:list):
+    '''
+    Function to get the pos tag id from the label id. 
+    for example:
+        input:  129, 15, 324, 34, 255, 12
+        output  1, 1, 1, 2, 3, 4 (NOUN, NOUN, NOUN, VERB, ADJ, ADV)
+    '''
+    
     pos_tag_id = torch.full_like(label_id, fill_value=-1)
     
     for key in pos_tag_dict.keys():
