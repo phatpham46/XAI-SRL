@@ -101,7 +101,7 @@ class CustomLoss(nn.modules.loss._Loss):
 
         # Combine terms
         # b_loss = 0.5 * ((b_cross_entropy_term) + (1 - b_matching_term))
-        b_loss = 1.0 * ((1 - b_matching_term))
+        b_loss = (1.0 * ((1 - b_matching_term))).requires_grad_(True)
         return b_loss.mean()
     
     
