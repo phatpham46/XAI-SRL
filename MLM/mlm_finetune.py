@@ -17,6 +17,8 @@ from argparse import ArgumentParser
 from babel.dates import format_time
 from draft_loss import CustomLoss
 from mlm_utils.custom_dataset import CustomDataset
+import os
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 # sys.path.append('../')
 # sys.path.append('/content/SRLPredictionEasel')
 sys.path.append('/kaggle/working/SRLPredictionEasel')
@@ -118,7 +120,7 @@ def eval_model(args, model, epoch, loss_fn=CustomLoss, validation_dataloader=Cus
     all_origin_pos_tag_id = []
     all_pred_id = []
     all_origin_id = []
-    for batch in tqdm(validation_dataloader, total=numStep, desc = 'Eval'):
+    for batch in tqdm(validation_dataloader, total=len(validation_dataloader), desc = 'Eval'):
       
       batch = tuple(t.to(device) for t in batch)
       b_input_ids, b_input_attention_mask, b_token_type_id, b_labels = batch
@@ -126,7 +128,7 @@ def eval_model(args, model, epoch, loss_fn=CustomLoss, validation_dataloader=Cus
       
       # step 1. compute the output    
       with torch.no_grad():   
-          output = model.module(b_input_ids, 
+          output = model.modules(b_input_ids, 
                          attention_mask=b_input_attention_mask, 
                          token_type_ids = b_token_type_id, 
                          labels=b_labels) 
@@ -253,7 +255,7 @@ def train(args, model, optimizer, scheduler, loss_fn, val_dataset, train_dataset
       
         batch_num = 0
         t0 = time.time()
-        with tqdm(total=len(train_dataloader), position=epoch, desc=f"Epoch {epoch}") as progress:
+        with tqdm(total=len(train_dataloader), desc=f"Epoch {epoch}") as progress:
             for batch in train_dataloader:
                 
                 batch = tuple(t.to(device) for t in batch)  
