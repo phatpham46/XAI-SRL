@@ -100,8 +100,8 @@ class CustomLoss(nn.modules.loss._Loss):
         b_matching_term = torch.stack(is_POS_match(b_input_id, b_logit_id, b_label_id)[0]).view(-1)
 
         # Combine terms
-        b_loss = 0.5 * ((b_cross_entropy_term) + (1 - b_matching_term))
-        
+        # b_loss = 0.5 * ((b_cross_entropy_term) + (1 - b_matching_term))
+        b_loss = 1.0 * ((1 - b_matching_term))
         return b_loss.mean()
     
     
