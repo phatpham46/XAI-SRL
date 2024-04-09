@@ -294,7 +294,7 @@ def train(args, model, optimizer, scheduler, loss_fn, val_dataset, train_dataset
                 batch_num += 1
                 progress.update(1)
 
-        training_time = format_time(time.time() - t0)
+        training_time = time.time() - t0
         
         # Average loss per epoch
         avg_train_loss = total_train_loss / batch_num
