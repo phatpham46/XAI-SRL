@@ -97,11 +97,11 @@ class CustomLoss(nn.modules.loss._Loss):
         b_cross_entropy_term = F.cross_entropy((1-b_logit_id).view(-1, TOKENIZER.vocab_size), b_label_id.view(-1), reduction='none')
     
         # Custom matching term
-        b_matching_term = torch.stack(is_POS_match(b_input_id, b_logit_id, b_label_id)[0]).view(-1)
+        b_matching_term = torch.stack(is_POS_match(b_input_id, b_logit_id, b_label_id)[0]).view(-1).float().requires_grad_(True)
 
         # Combine terms
-        # b_loss = 0.5 * ((b_cross_entropy_term) + (1 - b_matching_term))
-        b_loss = (1.0 * ((1 - b_matching_term))).requires_grad_(True)
+        b_loss = 0.5 * ((b_cross_entropy_term) + (1 - b_matching_term))
+        # b_loss = (1.0 * ((1 - b_matching_term))).requires_grad_(True)
         return b_loss.mean()
     
     
