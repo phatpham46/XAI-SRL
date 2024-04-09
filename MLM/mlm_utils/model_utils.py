@@ -5,7 +5,7 @@ from mlm_utils.utils_mlm import count_num_cpu_gpu
 MLM_IGNORE_LABEL_IDX = -1
 VOCAB_SIZE = 28996 
 BATCH_SIZE = 32
-EPOCHS = 5
+EPOCHS = 10
 MAX_SEQ_LEN = 85
 BERT_PRETRAIN_MODEL = "dmis-lab/biobert-base-cased-v1.2"
 NUM_CPU, NUM_GPU = count_num_cpu_gpu()
