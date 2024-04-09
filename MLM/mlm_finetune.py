@@ -155,10 +155,9 @@ def eval_model(args, model, epoch, loss_fn=CustomLoss, validation_dataloader=Cus
     
     assert len(all_pred_pos_tag_is) == len(all_origin_pos_tag_id) == len(all_pred_id) == len(all_origin_id), logger.debug("lengths are not equal")
     
-    avg_eval_loss_len_eval_data = total_loss / len(validation_dataloader)
     avg_eval_loss = total_loss / batch_num
     val_time = time.time() - t0
-    logger.info("  Average validate loss: {:} Average val loss by eval data: {:} Training epoch took: {:} secs ".format(avg_eval_loss, avg_eval_loss_len_eval_data, val_time))
+    logger.info("  Average validate loss: {:} Training epoch took: {:} secs ".format(avg_eval_loss, val_time))
     
     del total_loss
     gc.collect()
