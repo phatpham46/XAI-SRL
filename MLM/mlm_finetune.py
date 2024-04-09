@@ -1,3 +1,4 @@
+import gc
 import math
 import time
 
@@ -35,7 +36,7 @@ from datetime import datetime
 
 # tb = SummaryWriter()
 # tb = SummaryWriter("/content/drive/MyDrive/ColabNotebooks/logs_mlm")
-tb = SummaryWriter("/kaggle/working/logs_mlm")
+tb = SummaryWriter("/kaggle/working/logs_tb")
 
 def make_argument(parser):
     parser.add_argument('--data_dir', type=Path, required=True)
@@ -86,7 +87,7 @@ args = parser.parse_args()
 
 # setting logging
 now = datetime.now()
-logDir =  now.strftime("%d_%m-%H_%M")
+logDir = "/kaggle/working/logs_mlm/" + now.strftime("%d_%m-%H_%M")
 if not os.path.isdir(logDir):
     os.makedirs(logDir)
 
@@ -125,17 +126,18 @@ def eval_model(args, model, epoch, loss_fn=CustomLoss, validation_dataloader=Cus
       
       # step 1. compute the output    
       with torch.no_grad():   
-          output = model(b_input_ids, attention_mask=b_input_attention_mask, labels=b_labels) 
+          output = model.module(b_input_ids, 
+                         attention_mask=b_input_attention_mask, 
+                         token_type_ids = b_token_type_id, 
+                         labels=b_labels) 
       
       # get pos tag prediction
-      
       _, b_pred_id, b_pred_pos_tag_id, b_origin_pos_tag_id = is_POS_match(b_input_ids, output.logits, b_labels)   
       all_pred_pos_tag_is.extend(b_pred_pos_tag_id)
       all_origin_pos_tag_id.extend(b_origin_pos_tag_id)
       all_pred_id.extend(b_pred_id)
       all_origin_id.extend(b_input_ids)
       
-     
       # step 2. compute the loss
       loss_batch = loss_fn(output.logits, b_input_ids, b_labels)
       if n_gpu > 1:
@@ -144,22 +146,28 @@ def eval_model(args, model, epoch, loss_fn=CustomLoss, validation_dataloader=Cus
       total_loss += loss_batch
       batch_num += 1
     ## debug
-    print("LEN ALL PRED POS TAG ID", len(all_pred_pos_tag_is))
-    print("LEN ALL origin POS TAG ID", len(all_origin_pos_tag_id))
-    print("LEN ALL all_pred_id", len(all_pred_id))
-    print("LEN ALL all_origin_id", len(all_origin_id))
+    logger.debug("len all pred pos tag id:", len(all_pred_pos_tag_is))
+    logger.debug("len all origin pos tag id", len(all_origin_pos_tag_id))
+    logger.debug("len all pred id", len(all_pred_id))
+    logger.debug("len all origin id", len(all_origin_id))
     
-    assert len(all_pred_pos_tag_is) == len(all_origin_pos_tag_id) == len(all_pred_id) == len(all_origin_id)
+    assert len(all_pred_pos_tag_is) == len(all_origin_pos_tag_id) == len(all_pred_id) == len(all_origin_id), logger.debug("lengths are not equal")
+    
+    avg_eval_loss_len_eval_data = total_loss / len(validation_dataloader)
     avg_eval_loss = total_loss / batch_num
     val_time = time.time() - t0
-    logger.info("  Average validate loss: {:} Training epoch took: {:} secs".format(avg_eval_loss, val_time))
+    logger.info("  Average validate loss: {:} Average val loss by eval data: {:} Training epoch took: {:} secs ".format(avg_eval_loss, avg_eval_loss_len_eval_data, val_time))
     
+    del total_loss
+    gc.collect()
     if args.pred_dir is not None and wrt_path is not None:
         df = pd.DataFrame({"prediction_pos_tag_id" : [t.cpu().numpy() for t in all_pred_pos_tag_is], "label_pos_tag_id" : [t.cpu().numpy() for t in all_origin_pos_tag_id], 
                             "prediction_id" : [t.cpu().numpy() for t in all_pred_id], "origin_id" : [t.cpu().numpy() for t in all_origin_id]})
         
         savePath = os.path.join(args.pred_dir, "pred_mlm_{}_{}.tsv".format(wrt_path, epoch))
         df.to_csv(savePath, sep = "\t", index = False)
+    
+    del all_pred_pos_tag_is, all_origin_pos_tag_id, all_pred_id, all_origin_id
     return avg_eval_loss
 
 def save_model(model, optimizer, scheduler, globalStep, savePath) :
@@ -245,7 +253,7 @@ def train(args, model, optimizer, scheduler, loss_fn, val_dataset, train_dataset
       
         batch_num = 0
         t0 = time.time()
-        with tqdm(total=len(train_dataloader),position=epoch, desc=f"Epoch {epoch}") as progress:
+        with tqdm(total=len(train_dataloader), position=epoch, desc=f"Epoch {epoch}") as progress:
             for batch in train_dataloader:
                 
                 batch = tuple(t.to(device) for t in batch)  
