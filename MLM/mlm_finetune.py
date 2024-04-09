@@ -15,7 +15,7 @@ from pathlib import Path
 from collections import defaultdict
 from argparse import ArgumentParser
 from babel.dates import format_time
-from MLM.custom_loss import CustomLoss
+
 from mlm_utils.custom_dataset import CustomDataset
 from eval import eval_model
 
@@ -33,7 +33,7 @@ from torch.utils.tensorboard import SummaryWriter
 from transformers import get_linear_schedule_with_warmup 
 from mlm_utils.preprocess_functions import get_pos_tag_word, get_pos_tag_id, generate_batches
 from mlm_utils.model_utils import BATCH_SIZE, EPOCHS, BIOBERT_MODEL, BERT_PRETRAIN_MODEL, TOKENIZER
-from MLM.custom_loss import is_POS_match
+from MLM.custom_loss import CustomLoss
 from prepared_for_mlm import get_word_list, decode_token
 from datetime import datetime
 
@@ -92,6 +92,7 @@ args = parser.parse_args()
 # setting logging
 now = datetime.now()
 logDir = "/kaggle/working/logs_mlm/" + now.strftime("%d_%m-%H_%M")
+# logDir =  now.strftime("%d_%m-%H_%M")
 if not os.path.isdir(logDir):
     os.makedirs(logDir)
 

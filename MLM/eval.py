@@ -4,13 +4,10 @@ import os
 import pandas as pd
 import torch
 import time
-import math
 from tqdm import tqdm
 
 from mlm_utils.model_utils import BATCH_SIZE, EPOCHS, BIOBERT_MODEL, BERT_PRETRAIN_MODEL, TOKENIZER
-from MLM.custom_loss import is_POS_match
-from datetime import datetime
-from MLM.custom_loss import CustomLoss
+from custom_loss import is_POS_match, CustomLoss
 from mlm_utils.custom_dataset import CustomDataset
 
 def eval_model(args, logger, model, epoch, loss_fn=CustomLoss, validation_dataloader=CustomDataset, wrt_path=None):
