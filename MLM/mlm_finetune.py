@@ -86,7 +86,7 @@ args = parser.parse_args()
 
 # setting logging
 now = datetime.now()
-logDir = now.strftime("%d_%m-%H_%M")
+logDir =  now.strftime("%d_%m-%H_%M")
 if not os.path.isdir(logDir):
     os.makedirs(logDir)
 
@@ -113,10 +113,10 @@ def eval_model(args, model, epoch, loss_fn=CustomLoss, validation_dataloader=Cus
     model.eval()
     batch_num=0
     numStep = math.ceil(len(validation_dataloader)/BATCH_SIZE)
-    all_pred_pos_tag_is = [ [] for _ in range(1)]
-    all_origin_pos_tag_id = [ [] for _ in range(1)]
-    all_pred_id = [ [] for _ in range(1)]
-    all_origin_id = [ [] for _ in range(1)]
+    all_pred_pos_tag_is = []
+    all_origin_pos_tag_id = []
+    all_pred_id = []
+    all_origin_id = []
     for batch in tqdm(validation_dataloader, total=numStep, desc = 'Eval'):
       
       batch = tuple(t.to(device) for t in batch)
@@ -155,11 +155,11 @@ def eval_model(args, model, epoch, loss_fn=CustomLoss, validation_dataloader=Cus
     logger.info("  Average validate loss: {:} Training epoch took: {:} secs".format(avg_eval_loss, val_time))
     
     if args.pred_dir is not None and wrt_path is not None:
-      df = pd.DataFrame({"prediction_pos_tag_id" : all_pred_pos_tag_is, "label_pos_tag_id" : all_origin_pos_tag_id, 
-                          "prediction_id" : all_pred_id, "origin_id" : all_origin_id})
-      
-      savePath = os.path.join(args.pred_dir, "pred_mlm_{}_{}".format(wrt_path, epoch))
-      df.to_csv(savePath, sep = "\t", index = False)
+        df = pd.DataFrame({"prediction_pos_tag_id" : [t.cpu().numpy() for t in all_pred_pos_tag_is], "label_pos_tag_id" : [t.cpu().numpy() for t in all_origin_pos_tag_id], 
+                            "prediction_id" : [t.cpu().numpy() for t in all_pred_id], "origin_id" : [t.cpu().numpy() for t in all_origin_id]})
+        
+        savePath = os.path.join(args.pred_dir, "pred_mlm_{}_{}.tsv".format(wrt_path, epoch))
+        df.to_csv(savePath, sep = "\t", index = False)
     return avg_eval_loss
 
 def save_model(model, optimizer, scheduler, globalStep, savePath) :
@@ -200,10 +200,6 @@ def train(args, model, optimizer, scheduler, loss_fn, val_dataset, train_dataset
     
     global_step = 0 # across all batches
     
-    m = tf.metrics.Accuracy()
-    m_f1 = tf.metrics.F1Score()
-    
-
     # Prepare model
     model = BIOBERT_MODEL
     model.to(device)
@@ -215,15 +211,13 @@ def train(args, model, optimizer, scheduler, loss_fn, val_dataset, train_dataset
     logger.info("***** Running training *****")
     logger.info(f" Num examples = {args.num_samples}")
    
-   
-    
+
     num_train_steps = math.ceil(args.num_samples / args.train_batch_size) * args.epochs 
     logger.info("Num train optimization steps: {}".format(num_train_steps))
     
     for epoch in range(args.epochs):
         
         logger.info('\n================= EPOCH {:} ================='.format(epoch))
-
 
         model.train()
         print('put model in train mode')
