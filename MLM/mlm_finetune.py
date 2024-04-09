@@ -243,7 +243,7 @@ def train(args, model, optimizer, scheduler, loss_fn, val_dataset, train_dataset
         
         # Testing model
         logger.info("\nRunning Evaluation on test... at epoch {}".format(epoch))
-        test_loss = eval_model(args, model, epoch, loss_fn, test_dataloader, wrt_path = "test_predictions_mlm")
+        test_loss = eval_model(args, logger, model, epoch, loss_fn, test_dataloader, wrt_path = "test_predictions_mlm")
         
         # Save model after each epoch
         if  avg_val_loss < min_val_loss and epoch < args.epochs and (n_gpu > 1 and torch.distributed.get_rank() == 0 or n_gpu <= 1):
@@ -275,7 +275,6 @@ def pretrain_on_treatment(args, model):
     # Prepare parameters
     num_train_steps = math.ceil(args.num_samples / args.train_batch_size) * args.epochs 
     total_steps = int(num_train_steps / args.epochs)
-    logger.info("Num train optimization steps: ", total_steps)
     
     
     # Prepare optimizer
