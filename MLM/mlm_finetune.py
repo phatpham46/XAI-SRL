@@ -15,8 +15,10 @@ from pathlib import Path
 from collections import defaultdict
 from argparse import ArgumentParser
 from babel.dates import format_time
-from draft_loss import CustomLoss
+from MLM.custom_loss import CustomLoss
 from mlm_utils.custom_dataset import CustomDataset
+from eval import eval_model
+
 import os
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 # sys.path.append('../')
@@ -31,7 +33,7 @@ from torch.utils.tensorboard import SummaryWriter
 from transformers import get_linear_schedule_with_warmup 
 from mlm_utils.preprocess_functions import get_pos_tag_word, get_pos_tag_id, generate_batches
 from mlm_utils.model_utils import BATCH_SIZE, EPOCHS, BIOBERT_MODEL, BERT_PRETRAIN_MODEL, TOKENIZER
-from draft_loss import is_POS_match
+from MLM.custom_loss import is_POS_match
 from prepared_for_mlm import get_word_list, decode_token
 from datetime import datetime
 
@@ -98,79 +100,6 @@ logger = make_logger(name = "mlm_finetune", debugMode=args.debug_mode,
 logger.info("logger created.")
 
 
-def eval_model(args, model, epoch, loss_fn=CustomLoss, validation_dataloader=CustomDataset, wrt_path=None):
-    if args.local_rank == -1 or args.no_cuda:
-        device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
-       
-        n_gpu = torch.cuda.device_count()
-    else:
-        torch.cuda.set_device(args.local_rank)
-        device = torch.device("cuda", args.local_rank)
-        n_gpu = 1
-        
-    model.to(device)
-    
-    t0 = time.time()
-    
-    total_loss = 0
-    model.eval()
-    batch_num=0
-    numStep = math.ceil(len(validation_dataloader)/BATCH_SIZE)
-    all_pred_pos_tag_is = []
-    all_origin_pos_tag_id = []
-    all_pred_id = []
-    all_origin_id = []
-    for batch in tqdm(validation_dataloader, total=len(validation_dataloader), desc = 'Eval'):
-      
-      batch = tuple(t.to(device) for t in batch)
-      b_input_ids, b_input_attention_mask, b_token_type_id, b_labels = batch
-
-      
-      # step 1. compute the output    
-      with torch.no_grad():   
-          output = model(b_input_ids, 
-                         attention_mask=b_input_attention_mask, 
-                         token_type_ids = b_token_type_id, 
-                         labels=b_labels) 
-      
-      # get pos tag prediction
-      _, b_pred_id, b_pred_pos_tag_id, b_origin_pos_tag_id = is_POS_match(b_input_ids, output.logits, b_labels)   
-      all_pred_pos_tag_is.extend(b_pred_pos_tag_id)
-      all_origin_pos_tag_id.extend(b_origin_pos_tag_id)
-      all_pred_id.extend(b_pred_id)
-      all_origin_id.extend(b_input_ids)
-      
-      # step 2. compute the loss
-      loss_batch = loss_fn(output.logits, b_input_ids, b_labels)
-      if n_gpu > 1:
-          loss_batch = loss_batch.mean() # mean() to average on multi-gpu.
-      
-      total_loss += loss_batch
-      batch_num += 1
-    ## debug
-    logger.debug("len all pred pos tag id:", len(all_pred_pos_tag_is))
-    logger.debug("len all origin pos tag id", len(all_origin_pos_tag_id))
-    logger.debug("len all pred id", len(all_pred_id))
-    logger.debug("len all origin id", len(all_origin_id))
-    
-    assert len(all_pred_pos_tag_is) == len(all_origin_pos_tag_id) == len(all_pred_id) == len(all_origin_id), logger.debug("lengths are not equal")
-    
-    avg_eval_loss = total_loss / batch_num
-    val_time = time.time() - t0
-    logger.info("  Average validate loss: {:} Training epoch took: {:} secs ".format(avg_eval_loss, val_time))
-    
-    del total_loss
-    gc.collect()
-    if args.pred_dir is not None and wrt_path is not None:
-        df = pd.DataFrame({"prediction_pos_tag_id" : [t.cpu().numpy() for t in all_pred_pos_tag_is], "label_pos_tag_id" : [t.cpu().numpy() for t in all_origin_pos_tag_id], 
-                            "prediction_id" : [t.cpu().numpy() for t in all_pred_id], "origin_id" : [t.cpu().numpy() for t in all_origin_id]})
-        
-        savePath = os.path.join(args.pred_dir, "pred_mlm_{}_{}.tsv".format(wrt_path, epoch))
-        df.to_csv(savePath, sep = "\t", index = False)
-    
-    del all_pred_pos_tag_is, all_origin_pos_tag_id, all_pred_id, all_origin_id
-    return avg_eval_loss
-
 def save_model(model, optimizer, scheduler, globalStep, savePath) :
     modelStateDict = {k : v.cpu() for k,v in model.state_dict().items()}
     toSave = {'model_state_dict' :modelStateDict,
@@ -206,8 +135,8 @@ def train(args, model, optimizer, scheduler, loss_fn, val_dataset, train_dataset
     
     # assign min threshold with max value
     min_val_loss = float('inf')
-    
     global_step = 0 # across all batches
+    
     
     # Prepare model
     model = BIOBERT_MODEL
@@ -301,7 +230,7 @@ def train(args, model, optimizer, scheduler, loss_fn, val_dataset, train_dataset
         
         # validation
         logger.info("\nRunning Evaluation on validation... at epoch {}".format(epoch))
-        avg_val_loss = eval_model(args, model, epoch, loss_fn, val_dataloader, wrt_path=None)        
+        avg_val_loss = eval_model(args, logger, model, epoch, loss_fn, val_dataloader, wrt_path=None)        
             
         logger.info("  Average training loss: {:} Training epoch took: {:}".format(avg_train_loss, training_time))
         
@@ -319,7 +248,6 @@ def train(args, model, optimizer, scheduler, loss_fn, val_dataset, train_dataset
         if  avg_val_loss < min_val_loss and epoch < args.epochs and (n_gpu > 1 and torch.distributed.get_rank() == 0 or n_gpu <= 1):
             logger.info("** ** * Saving fine-tuned model ** ** * ")
             epoch_output_dir = args.output_dir / f"mlm_epoch_{epoch}.pt"
-            # epoch_output_dir.mkdir(parents=True, exist_ok=True)
             
             save_model(model, optimizer, scheduler, global_step, epoch_output_dir)
             
@@ -346,7 +274,7 @@ def pretrain_on_treatment(args, model):
     # Prepare parameters
     num_train_steps = math.ceil(args.num_samples / args.train_batch_size) * args.epochs 
     total_steps = int(num_train_steps / args.epochs)
-    print("Num train optimization steps: ", total_steps)
+    logger.info("Num train optimization steps: ", total_steps)
     
     
     # Prepare optimizer
@@ -371,18 +299,6 @@ def pretrain_on_treatment(args, model):
     # Train model
     train(args, model, optimizer, scheduler, loss_fn, validation_dataset, train_dataset, test_dataset)
     
-    
-    
-    # # Evaluate model on dev
-    # logger.info("\nRunning Evaluation on dev...")
-    # dev_loss, dev_accuracy = eval_model(args, model, validation_dataset)
-    # logger.info("Validation Loss: {} Validation Accuracy: {}".format(dev_loss, dev_accuracy))
-    
-    
-    # # Evaluate model on test
-    # logger.info("\nRunning Evaluation on test...")
-    # test_loss, test_accuracy = eval_model(args, model, test_dataset)
-    # logger.info("Test Loss: {} Test Accuracy: {}".format(test_loss, test_accuracy))
 
 def main():
     # python mlm_finetune.py --data_dir mlm_prepared_data_3/ --output_dir mlm_finetune_output_3 --pred_dir 

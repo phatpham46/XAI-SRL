@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from mlm_utils.preprocess_functions import get_pos_tag_word, get_pos_tag_id, generate_batches
 from prepared_for_mlm import get_word_list, decode_token
-from mlm_utils.model_utils import BATCH_SIZE, EPOCHS, BIOBERT_MODEL, BERT_PRETRAIN_MODEL, TOKENIZER
+from mlm_utils.model_utils import TOKENIZER
 
 def get_pos_tag(token_id, origin_input_id, label_id):
     '''
