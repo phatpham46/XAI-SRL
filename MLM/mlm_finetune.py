@@ -128,7 +128,7 @@ def eval_model(args, model, epoch, loss_fn=CustomLoss, validation_dataloader=Cus
       
       # step 1. compute the output    
       with torch.no_grad():   
-          output = model.modules(b_input_ids, 
+          output = model(b_input_ids, 
                          attention_mask=b_input_attention_mask, 
                          token_type_ids = b_token_type_id, 
                          labels=b_labels) 
