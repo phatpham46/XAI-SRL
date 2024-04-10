@@ -4,16 +4,16 @@ import torch
 import sys
 import os
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-sys.path.append('../')
+# sys.path.append('../')
 
 # sys.path.append('/content/SRLPredictionEasel')
-# sys.path.append('/kaggle/working/SRLPredictionEasel')
+sys.path.append('/kaggle/working/SRLPredictionEasel')
 
 
 from logger_ import make_logger
-sys.path.insert(1, '../')
+# sys.path.insert(1, '../')
 # sys.path.insert(1, '/content/SRLPredictionEasel')
-# sys.path.insert(1, '/kaggle/working/SRLPredictionEasel')
+sys.path.insert(1, '/kaggle/working/SRLPredictionEasel')
 from tqdm import tqdm
 from pathlib import Path
 from datetime import datetime
@@ -33,6 +33,7 @@ def make_argument(parser):
     parser.add_argument("--pred_dir", type=Path, required=True)
     parser.add_argument("--log_dir", type=Path, required=False, 
                         default=Path("logs_mlm"))
+    parser.add_argument("--model_file", type=Path, required=False)
     parser.add_argument("--bert_model", type=str, required=False, 
                         default=BERT_PRETRAIN_MODEL,
                         help="Bert pre-trained model")
@@ -73,7 +74,8 @@ def make_argument(parser):
     parser.add_argument('--silent', default = False, action = 'store_true', 
                         help = "Only write logs to file if True")
     parser.add_argument("--corpus_type", type=str, required=False, default="")
-    
+    parser.add_argument("--load_save_model", default=False, action='store_true', 
+                        help = "Load saved model to continue training")
     
     return parser
 
@@ -103,7 +105,15 @@ def save_model(model, optimizer, scheduler, globalStep, savePath) :
     
     torch.save(toSave, savePath)
     logger.info('model saved in {} global step at {}'.format(globalStep, savePath))
-        
+
+def load_model(loadPath, model, device, optimizer, scheduler):
+    loadedDict = torch.load(loadPath, map_location=device)
+
+    loadedDict['model_state_dict'] = {k.lstrip('module.'):v for k, v in loadedDict['model_state_dict'].items()}
+   
+    model.load_state_dict(loadedDict['model_state_dict'])
+    optimizer.load_state_dict(loadedDict['optimizer_state'])
+    scheduler.load_state_dict(loadedDict['scheduler_state'])      
             
 def train(args, model, optimizer, scheduler, loss_fn:CustomLoss, val_dataset:CustomDataset, train_dataset:CustomDataset, test_dataset:CustomDataset):
    
@@ -286,8 +296,20 @@ def main():
     
     logger.info("\nARGS: {}".format(args))
     
-    # Train model
-    train(args, BIOBERT_MODEL, optimizer, scheduler, loss_fn, validation_dataset, train_dataset, test_dataset)
+    #Load finetuned model
+  
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    # Load finetuned model 
+    
+    model = BIOBERT_MODEL
+    if args.load_save_model and args.model_file.is_file():
+        load_model(args.model_file, model, device, optimizer, scheduler)
+        
+        logger.info("Model loaded successfully")
+        train(args, model, optimizer, scheduler, loss_fn, validation_dataset, train_dataset, test_dataset)
+    else:    
+        # Train model
+        train(args, model, optimizer, scheduler, loss_fn, validation_dataset, train_dataset, test_dataset)
 
 if __name__ == '__main__':
     # python mlm_finetune.py --data_dir mlm_prepared_data_3/ --output_dir mlm_finetune_output_3 --pred_dir 
