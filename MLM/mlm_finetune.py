@@ -51,7 +51,7 @@ def make_argument(parser):
     parser.add_argument("--do_lower_case", action="store_true")
     parser.add_argument("--reduce_memory", action="store_true",
                         help="Store training data as on-disc memmaps to massively reduce memory usage")
-    parser.add_argument("--num_samples", type=int, required=False, default=51823)
+    parser.add_argument("--num_samples", type=int, required=False)
     parser.add_argument("--epochs", type=int, default=EPOCHS, help="Number of epochs to train for")
     parser.add_argument("--local_rank",
                         type=int,
@@ -255,10 +255,8 @@ def train(args, model, optimizer, scheduler, loss_fn, val_dataset, train_dataset
             min_val_loss = avg_val_loss
             logger.info('model saved in {} global step at {}'.format(global_step, epoch_output_dir))
   
-
-
-def pretrain_on_treatment(args, model):
-   
+def main():
+    
     # Prepare data
     train_dataset = CustomDataset(
         data_path=args.data_dir, 
@@ -272,13 +270,18 @@ def pretrain_on_treatment(args, model):
         data_path=args.data_dir,
         file_name='test_mlm.json')
     
+    logger.info("Length of train dataset: {}".format(len(train_dataset)))
+    logger.info("Length of validation dataset: {}".format(len(validation_dataset)))
+    logger.info("Length of test dataset: {}".format(len(test_dataset)))
+    
+    
     # Prepare parameters
     num_train_steps = math.ceil(args.num_samples / args.train_batch_size) * args.epochs 
     total_steps = int(num_train_steps / args.epochs)
     
     
     # Prepare optimizer
-    param_optimizer = list(model.named_parameters())
+    param_optimizer = list(BIOBERT_MODEL.named_parameters())
     no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']  
     optimizer_grouped_parameters = [
         {'params': [p for n, p in param_optimizer if not any(nd in n for nd in no_decay)],
@@ -297,13 +300,11 @@ def pretrain_on_treatment(args, model):
     logger.info("\nARGS: {}".format(args))
     
     # Train model
-    train(args, model, optimizer, scheduler, loss_fn, validation_dataset, train_dataset, test_dataset)
-    
-
-def main():
-    # python mlm_finetune.py --data_dir mlm_prepared_data_3/ --output_dir mlm_finetune_output_3 --pred_dir 
-    pretrain_on_treatment(args, BIOBERT_MODEL)
-   
+    train(args, BIOBERT_MODEL, optimizer, scheduler, loss_fn, validation_dataset, train_dataset, test_dataset)
 
 if __name__ == '__main__':
+    # python mlm_finetune.py --data_dir mlm_prepared_data_3/ --output_dir mlm_finetune_output_3 --pred_dir 
+    
     main()
+    
+    
