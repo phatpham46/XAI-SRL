@@ -2,10 +2,8 @@
 import os
 import numpy as np
 import torch
-from mlm_utils.model_utils import BATCH_SIZE, EPOCHS, BIOBERT_MODEL, BERT_PRETRAIN_MODEL, TOKENIZER, NUM_CPU, MAX_SEQ_LEN, NLP
-
-from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
-
+from mlm_utils.model_utils import NLP
+from mlm_utils.model_utils import MLM_IGNORE_LABEL_IDX, VOCAB_SIZE, BATCH_SIZE, EPOCHS, MAX_SEQ_LEN, BERT_PRETRAIN_MODEL, NLP, TOKENIZER
 
 def check_data_dir(data_dir: str, auto_create=False) -> None:
     """ Check if the data directory exists. If it does not exist, create it if auto_create is True.
@@ -24,30 +22,19 @@ def check_data_dir(data_dir: str, auto_create=False) -> None:
         else:
             raise FileNotFoundError(f"Data directory {data_dir} does not exist.")
 
-def get_sampler(local_rank, dataset):
-    if local_rank == -1:
-        return RandomSampler(dataset)
-    else:
-        return SequentialSampler(dataset)
+def get_files(dir: str) -> list:
+    '''Function to get the list of files in a given folder'''
     
+    files = []
+    for path in os.listdir(dir):
+        if os.path.isfile(os.path.join(dir, path)):
+            files.append(path)
+    return files
 
-def generate_batches(local_rank, dataset, batch_size,
-    drop_last=True, device="cpu"):
-    """
-    A generator function which wraps the PyTorch DataLoader. It will
-    ensure each tensor is on the write device location.
-    """
-    dataloader = DataLoader(
-        dataset=dataset, 
-        sampler=get_sampler(local_rank, dataset),
-        batch_size=batch_size,
-        drop_last=drop_last,
-        num_workers=NUM_CPU)  
 
-    return dataloader
-
-def get_pos_tag_word(word, text) :
-    
+def get_pos_tag_word(word:str, text:str) -> dict:
+    '''
+    Return dictionary with key is the word and value is the pos tag of the word'''
     doc = NLP(text)
     word_split = word.split()
     pos_tag_dict = {}
@@ -114,7 +101,7 @@ def pos_tag_mapping(pos_tag):
     else:
         return -1
 
-def get_pos_tag_id(word_dict:dict , pos_tag_dict: dict, label_id:list):
+def get_pos_tag_id(word_dict:dict, pos_tag_dict: dict, label_id:list):
     '''
     Function to get the pos tag id from the label id. 
     for example:
@@ -158,3 +145,21 @@ def get_heuristic_word(pos_tag_dict: dict) -> tuple:
     return heuristic_word.keys(), heuristic_word.values()      
     
     
+def decode_token(input_ids: list, skip_special_tokens=False) -> str:
+    ''' Funciton to decode the token to text
+    '''
+    
+    return TOKENIZER.decode(input_ids, skip_special_tokens=skip_special_tokens, return_offsets_mapping=True)
+
+def encode_text(text: str) -> dict:
+    ''' Function to encode the text '''
+    return TOKENIZER.encode_plus(
+                    text,
+                    max_length=MAX_SEQ_LEN,
+                    padding='max_length', 
+                    truncation=True,  
+                    add_special_tokens = True,
+                    return_tensors="pt",  
+                    return_attention_mask = True,
+                    return_offsets_mapping=True  
+                )

@@ -1,14 +1,12 @@
 import gc
 import os
-
 import pandas as pd
 import torch
 import time
 from tqdm import tqdm
 
-from mlm_utils.model_utils import BATCH_SIZE, EPOCHS, BIOBERT_MODEL, BERT_PRETRAIN_MODEL, TOKENIZER
-from custom_loss import is_POS_match, CustomLoss
-from mlm_utils.custom_dataset import CustomDataset
+from MLM.model.custom_loss import is_POS_match, CustomLoss
+from MLM.model.custom_dataset import CustomDataset
 
 def eval_model(args, logger, model, epoch, loss_fn=CustomLoss, validation_dataloader=CustomDataset, wrt_path=None):
     if args.local_rank == -1 or args.no_cuda:

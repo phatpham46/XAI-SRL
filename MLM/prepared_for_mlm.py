@@ -4,47 +4,15 @@ import re
 import torch
 import pandas as pd
 from tqdm import tqdm
-from multiprocessing import Pool
 from sklearn.model_selection import train_test_split
-from mlm_utils.preprocess_functions import get_pos_tag_word, get_word_list, check_data_dir
-from mlm_utils.model_utils import MLM_IGNORE_LABEL_IDX, VOCAB_SIZE, BATCH_SIZE, EPOCHS, MAX_SEQ_LEN, BERT_PRETRAIN_MODEL, NLP, TOKENIZER
-
+from mlm_utils.transform_func import get_pos_tag_word, get_word_list, check_data_dir, decode_token, encode_text, get_files
+from mlm_utils.model_utils import MAX_SEQ_LEN, NLP, TOKENIZER
 
 MAX_SEQ_LEN = 85
 NUMBER_WORKERS = 5 
 BERT_PRETRAINED_MODEL = 'dmis-lab/biobert-base-cased-v1.2'
-
 VOCAB_SIZE = 28996 
 wwm_probability = 0.1
-
-   
-def get_files(dir: str) -> list:
-    '''Function to get the list of files in a given folder'''
-    
-    files = []
-    for path in os.listdir(dir):
-        if os.path.isfile(os.path.join(dir, path)):
-            files.append(path)
-    return files
-
-def decode_token(input_ids: list, skip_special_tokens=False) -> str:
-    ''' Funciton to decode the token to text
-    '''
-    
-    return TOKENIZER.decode(input_ids, skip_special_tokens=skip_special_tokens, return_offsets_mapping=True)
-
-def encode_text(text: str) -> dict:
-    ''' Function to encode the text '''
-    return TOKENIZER.encode_plus(
-                    text,
-                    max_length=MAX_SEQ_LEN,
-                    padding='max_length', 
-                    truncation=True,  
-                    add_special_tokens = True,
-                    return_tensors="pt",  
-                    return_attention_mask = True,
-                    return_offsets_mapping=True  
-                )
 
 def convert_csv_to_tsv(readDir: str, writeDir: str) -> None:
     '''
@@ -179,10 +147,7 @@ def mask_content_words(ids: torch.Tensor, word_dict: dict) -> tuple:
             
                 if torch.equal(torch.as_tensor(masked_id[0][i:i+len(value)]).clone().detach(), torch.as_tensor(value).clone().detach()):
                     masked_id[0][i:i+len(value)]= TOKENIZER.mask_token_id
-                    #print("MASKED ID: ", masked_id)
                     masked_indice[masked_id == TOKENIZER.mask_token_id] = 1
-                    #print("MASKED INDICE: ", masked_indice)
-                    
                     
                     for idx, mask in enumerate(masked_indice[0]):
                         if mask == 1:
@@ -209,12 +174,9 @@ def masking_sentence_word(words: list, input_ids: torch.tensor, offsets: list) -
     
     return masked_sentences, label_ids
 
-
-
-
-def tokenize_csv_to_json(dataDir: str, wriDir: str) -> None:
+def data_preprocessing(dataDir: str, wriDir: str) -> None:
     '''
-    Tokenize_csv_to_json('./interim/', './mlm_output/')
+    data_preprocessing('./interim/', './mlm_output/')
     Function to create data in MLM format.
     Input file: csv with columns ['id', 'source ,'text', 'arguments']
     Output file: json with columns ['uid', 'token_id', 'mask', 'pos']
@@ -303,39 +265,10 @@ def data_split(dataDir: str, wriDir: str) -> tuple:
     test_df.to_json(os.path.join(wriDir, 'test_mlm.json'), orient='records', lines=True)
     
     return train_df, dev_df, test_df
-
-
-# def create_training_file(docs, epoch_num, output_dir):
-#     epoch_filename = output_dir / f"{BERT_PRETRAINED_MODEL}_epoch_{epoch_num}.json"
-#     num_instances = 0
-#     with epoch_filename.open('w') as epoch_file:
-#         for doc_idx in trange(len(docs), desc="Document"):
-#             doc_instances = docs[doc_idx]
-#             doc_instances = [json.dumps(instance) for instance in doc_instances]
-#             for instance in doc_instances:
-#                 epoch_file.write(instance + '\n')
-#                 num_instances += 1
-#     metrics_file = output_dir / f"{BERT_PRETRAINED_MODEL}_epoch_{epoch_num}_metrics.json"
-
-
-# def create_training_data(dataDir, wriDir):
-#     output_dir = Path(wriDir)
-#     output_dir.mkdir(exist_ok=True, parents=True)
-#     vocab_list = list(TOKENIZER.vocab.keys())    
-#     f = open(dataDir + '/train_mlm.json')
-#     docs = json.load(f)
-#     f.close()
-#     if NUMBER_WORKERS > 1:
-#         writer_workers = Pool(min(NUMBER_WORKERS, EPOCHS))
-#         arguments = [(docs, idx, output_dir) for idx in range(EPOCHS)]
-#         writer_workers.starmap(create_training_file, arguments)
-#     else:
-#         for epoch in trange(EPOCHS, desc="Epoch"):
-#             create_training_file(docs, epoch, output_dir)
-            
+          
 def main():
     
-    # tokenize_csv_to_json('./interim/', './mlm_output_3/')
+    # data_preprocessing('./interim/', './mlm_output_3/')
     
     data_split('./mlm_output_3/', './mlm_prepared_data_3/')
     

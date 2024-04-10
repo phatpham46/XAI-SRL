@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from mlm_utils.preprocess_functions import get_pos_tag_word, get_pos_tag_id, generate_batches
+from mlm_utils.transform_func import get_pos_tag_word, get_pos_tag_id
 from prepared_for_mlm import get_word_list, decode_token
 from mlm_utils.model_utils import TOKENIZER
 

@@ -1,58 +1,48 @@
-import gc
 import math
 import time
-
-import pandas as pd
 import torch
 import sys
 import os
-import tensorflow as tf
-import torch.nn.functional as F
-import matplotlib.pyplot as plt
-
-from tqdm import tqdm
-from pathlib import Path
-from collections import defaultdict
-from argparse import ArgumentParser
-from babel.dates import format_time
-
-from mlm_utils.custom_dataset import CustomDataset
-from eval import eval_model
-
-import os
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-# sys.path.append('../')
+sys.path.append('../')
+
 # sys.path.append('/content/SRLPredictionEasel')
-sys.path.append('/kaggle/working/SRLPredictionEasel')
+# sys.path.append('/kaggle/working/SRLPredictionEasel')
+
 
 from logger_ import make_logger
+sys.path.insert(1, '../')
 # sys.path.insert(1, '/content/SRLPredictionEasel')
-# sys.path.insert(1, '../')
-sys.path.insert(1, '/kaggle/working/SRLPredictionEasel')
+# sys.path.insert(1, '/kaggle/working/SRLPredictionEasel')
+from tqdm import tqdm
+from pathlib import Path
+from datetime import datetime
+from argparse import ArgumentParser
+from model.custom_loss import CustomLoss
+from model.custom_dataset import CustomDataset
+from model.eval import eval_model
 from torch.utils.tensorboard import SummaryWriter
 from transformers import get_linear_schedule_with_warmup 
-from mlm_utils.preprocess_functions import get_pos_tag_word, get_pos_tag_id, generate_batches
-from mlm_utils.model_utils import BATCH_SIZE, EPOCHS, BIOBERT_MODEL, BERT_PRETRAIN_MODEL, TOKENIZER
-from MLM.custom_loss import CustomLoss
-from prepared_for_mlm import get_word_list, decode_token
-from datetime import datetime
+from mlm_utils.transform_func import check_data_dir
+from mlm_utils.model_utils import BATCH_SIZE, EPOCHS, BIOBERT_MODEL, BERT_PRETRAIN_MODEL
 
-
-# tb = SummaryWriter()
-# tb = SummaryWriter("/content/drive/MyDrive/ColabNotebooks/logs_mlm")
-tb = SummaryWriter("/kaggle/working/logs_tb")
 
 def make_argument(parser):
     parser.add_argument('--data_dir', type=Path, required=True)
     parser.add_argument("--output_dir", type=Path, required=True)
     parser.add_argument("--pred_dir", type=Path, required=True)
-    parser.add_argument("--bert_model", type=str, required=False, default=BERT_PRETRAIN_MODEL,
+    parser.add_argument("--log_dir", type=Path, required=False, 
+                        default=Path("logs_mlm"))
+    parser.add_argument("--bert_model", type=str, required=False, 
+                        default=BERT_PRETRAIN_MODEL,
                         help="Bert pre-trained model")
     parser.add_argument("--do_lower_case", action="store_true")
     parser.add_argument("--reduce_memory", action="store_true",
                         help="Store training data as on-disc memmaps to massively reduce memory usage")
-    parser.add_argument("--num_samples", type=int, required=False)
-    parser.add_argument("--epochs", type=int, default=EPOCHS, help="Number of epochs to train for")
+    parser.add_argument("--num_samples", type=int, required=False, 
+                        default=0, help="Number of samples in the dataset")
+    parser.add_argument("--epochs", type=int, default=EPOCHS,
+                        help="Number of epochs to train for")
     parser.add_argument("--local_rank",
                         type=int,
                         default=-1,
@@ -76,11 +66,14 @@ def make_argument(parser):
                         default=1e-5,
                         type=float,
                         help="The initial learning rate for Adam.")
-    parser.add_argument('--debug_mode', default = False, action = 'store_true', help = "record logs for debugging if True")
-    parser.add_argument('--log_file', default='mlm_finetune_logs.log', type = str, help = "name of log file to store")
+    parser.add_argument('--debug_mode', default = False, action = 'store_true', 
+                        help = "record logs for debugging if True")
+    parser.add_argument('--log_file', default='mlm_finetune_logs.log', type = str, 
+                        help = "name of log file to store")
     parser.add_argument('--silent', default = False, action = 'store_true', 
                         help = "Only write logs to file if True")
     parser.add_argument("--corpus_type", type=str, required=False, default="")
+    
     
     return parser
 
@@ -88,14 +81,14 @@ parser = ArgumentParser()
 parser = make_argument(parser)
 args = parser.parse_args()
 
+# setting tensorboard
+now = datetime.now()
+logDir = args.log_dir / now.strftime("%d_%m-%H_%M")
+check_data_dir(logDir, auto_create=True)
+tb = SummaryWriter(logDir / "tb_logs")
+
 
 # setting logging
-now = datetime.now()
-logDir = "/kaggle/working/logs_mlm/" + now.strftime("%d_%m-%H_%M")
-# logDir =  now.strftime("%d_%m-%H_%M")
-if not os.path.isdir(logDir):
-    os.makedirs(logDir)
-
 logger = make_logger(name = "mlm_finetune", debugMode=args.debug_mode,
                     logFile=os.path.join(logDir, args.log_file), silent=args.silent)
 logger.info("logger created.")
@@ -112,7 +105,7 @@ def save_model(model, optimizer, scheduler, globalStep, savePath) :
     logger.info('model saved in {} global step at {}'.format(globalStep, savePath))
         
             
-def train(args, model, optimizer, scheduler, loss_fn, val_dataset, train_dataset, test_dataset):
+def train(args, model, optimizer, scheduler, loss_fn:CustomLoss, val_dataset:CustomDataset, train_dataset:CustomDataset, test_dataset:CustomDataset):
    
     if args.local_rank == -1 or args.no_cuda:
         device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
@@ -138,9 +131,6 @@ def train(args, model, optimizer, scheduler, loss_fn, val_dataset, train_dataset
     min_val_loss = float('inf')
     global_step = 0 # across all batches
     
-    
-    # Prepare model
-    model = BIOBERT_MODEL
     model.to(device)
     
     if n_gpu > 1:
@@ -162,24 +152,21 @@ def train(args, model, optimizer, scheduler, loss_fn, val_dataset, train_dataset
         print('put model in train mode')
 
         logger.info("Create data for training...")
-        train_dataloader = generate_batches(
+        train_dataloader = train_dataset.generate_batches(
             local_rank= args.local_rank, 
-            dataset=train_dataset, 
-            batch_size=args.train_batch_size, 
-            device=device)
+            dataset= train_dataset,           
+            batch_size=args.train_batch_size)
+       
+        val_dataloader = val_dataset.generate_batches(
+            local_rank= args.local_rank, 
+            dataset= val_dataset,
+            batch_size=args.train_batch_size)
         
-        val_dataloader = generate_batches(
+        test_dataloader = test_dataset.generate_batches(
             local_rank= args.local_rank, 
-            dataset=val_dataset, 
-            batch_size=args.train_batch_size, 
-            device=device)
+            dataset= test_dataset,
+            batch_size= args.train_batch_size)
         
-        test_dataloader = generate_batches(
-            local_rank= args.local_rank, 
-            dataset=test_dataset, 
-            batch_size=args.train_batch_size, 
-            device=device
-        )
         total_train_loss  = 0 
       
         batch_num = 0

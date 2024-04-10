@@ -1,7 +1,7 @@
 import json
 import torch
-import numpy as np
-from torch.utils.data import DataLoader, Dataset, RandomSampler, SequentialSampler
+from torch.utils.data import Dataset, DataLoader, RandomSampler, SequentialSampler
+from mlm_utils.model_utils import NUM_CPU
 
 class CustomDataset(Dataset):
     
@@ -28,16 +28,26 @@ class CustomDataset(Dataset):
         token_type_ids = torch.tensor(sample['token_type_ids'], dtype=torch.long)
         labels = torch.tensor(sample['labels'], dtype=torch.long)
         return token_id, attention_mask, token_type_ids, labels
-   
-    # def read_csv(self, data_path, file_name):
-    #     with open(data_path / file_name, 'r') as f:
-    #         lines = f.readlines()
-    #         for line in lines:
-    #             data_dict = json.loads(line)
-    #             data_dict['input_ids'] = json.loads(data_dict['token_id'])
-    #             data_dict['input_masks'] = json.loads(data_dict['attention_mask'])
-    #             #data_dict['token_type_ids'] = json.loads(data_dict['token_type_ids'])
-    #             data_dict['lm_label_ids'] = json.loads(data_dict['labels'])
-    #             self.data.append(data_dict)
-    #     return self.data
+    
+    def get_sampler(self, local_rank):
+        if local_rank == -1:
+            return RandomSampler(self.data)
+        else:
+            return SequentialSampler(self.data)
+        
+    def generate_batches(self, local_rank, batch_size, dataset,
+        drop_last=True):
+        """
+        A generator function which wraps the PyTorch DataLoader. It will
+        ensure each tensor is on the write device location.
+        """
+       
+        dataloader = DataLoader(
+            dataset= dataset, 
+            sampler= self.get_sampler(local_rank),
+            batch_size=batch_size,
+            drop_last=drop_last,
+            num_workers=NUM_CPU)  
+
+        return dataloader    
 
