@@ -109,7 +109,7 @@ def save_model(model, optimizer, scheduler, globalStep, min_val_loss, savePath) 
 
 def load_model(loadPath, model, device, optimizer, scheduler):
     loadedDict = torch.load(loadPath, map_location=device)
-
+ 
     loadedDict['model_state_dict'] = {k.lstrip('module.'):v for k, v in loadedDict['model_state_dict'].items()}
    
     model.load_state_dict(loadedDict['model_state_dict'])
@@ -258,6 +258,12 @@ def train(args, model, optimizer, scheduler, min_val_loss, loss_fn:CustomLoss, v
   
 def main():
     
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    
+    # Prepare model
+    model = BIOBERT_MODEL
+    model.to(device)
+    
     # Prepare data
     train_dataset = CustomDataset(
         data_path=args.data_dir, 
@@ -297,18 +303,10 @@ def main():
     
     # Prepare loss 
     loss_fn = CustomLoss()
-    
     logger.info("\nARGS: {}".format(args))
     
-    #Load finetuned model
-  
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    # Load finetuned model 
-    
+   
     # assign min threshold with max value
-    
-    
-    model = BIOBERT_MODEL
     if args.load_save_model and args.model_file.is_file():
         min_val_loss = load_model(args.model_file, model, device, optimizer, scheduler)
         
