@@ -1,6 +1,6 @@
 import spacy
 from transformers import BertTokenizerFast, BertForMaskedLM
-from mlm_utils.utils_mlm import count_num_cpu_gpu
+from MLM.mlm_utils.utils_mlm import count_num_cpu_gpu
 
 MLM_IGNORE_LABEL_IDX = -1
 VOCAB_SIZE = 28996 
