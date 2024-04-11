@@ -16,7 +16,7 @@ class CustomDataset(Dataset):
                 data_dict['token_type_ids'] = json.loads(data_dict['token_type_ids'])
                 data_dict['labels'] = json.loads(data_dict['labels'])
                 self.data.append(data_dict)
-        
+            
     def __len__(self):
         return len(self.data)
     

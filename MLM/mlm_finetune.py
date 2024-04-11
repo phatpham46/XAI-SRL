@@ -96,12 +96,13 @@ logger = make_logger(name = "mlm_finetune", debugMode=args.debug_mode,
 logger.info("logger created.")
 
 
-def save_model(model, optimizer, scheduler, globalStep, savePath) :
+def save_model(model, optimizer, scheduler, globalStep, min_val_loss, savePath) :
     modelStateDict = {k : v.cpu() for k,v in model.state_dict().items()}
     toSave = {'model_state_dict' :modelStateDict,
             'optimizer_state' : optimizer.state_dict(),
             'scheduler_state' : scheduler.state_dict(),
-            'global_step' : globalStep}
+            'global_step' : globalStep,
+            'min_val_loss' : min_val_loss}
     
     torch.save(toSave, savePath)
     logger.info('model saved in {} global step at {}'.format(globalStep, savePath))
@@ -113,9 +114,11 @@ def load_model(loadPath, model, device, optimizer, scheduler):
    
     model.load_state_dict(loadedDict['model_state_dict'])
     optimizer.load_state_dict(loadedDict['optimizer_state'])
-    scheduler.load_state_dict(loadedDict['scheduler_state'])      
+    scheduler.load_state_dict(loadedDict['scheduler_state'])    
+    min_val_loss = loadedDict['min_val_loss']  
+    return min_val_loss
             
-def train(args, model, optimizer, scheduler, loss_fn:CustomLoss, val_dataset:CustomDataset, train_dataset:CustomDataset, test_dataset:CustomDataset):
+def train(args, model, optimizer, scheduler, min_val_loss, loss_fn:CustomLoss, val_dataset:CustomDataset, train_dataset:CustomDataset, test_dataset:CustomDataset):
    
     if args.local_rank == -1 or args.no_cuda:
         device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
@@ -137,8 +140,7 @@ def train(args, model, optimizer, scheduler, loss_fn:CustomLoss, val_dataset:Cus
         
     args.pred_dir.mkdir(parents=True, exist_ok=True)
     
-    # assign min threshold with max value
-    min_val_loss = float('inf')
+    
     global_step = 0 # across all batches
     
     model.to(device)
@@ -150,7 +152,6 @@ def train(args, model, optimizer, scheduler, loss_fn:CustomLoss, val_dataset:Cus
     logger.info("***** Running training *****")
     logger.info(f" Num examples = {args.num_samples}")
    
-
     num_train_steps = math.ceil(args.num_samples / args.train_batch_size) * args.epochs 
     logger.info("Num train optimization steps: {}".format(num_train_steps))
     
@@ -243,13 +244,16 @@ def train(args, model, optimizer, scheduler, loss_fn:CustomLoss, val_dataset:Cus
         test_loss = eval_model(args, logger, model, epoch, loss_fn, test_dataloader, wrt_path = "test_predictions_mlm")
         
         # Save model after each epoch
-        if  avg_val_loss < min_val_loss and epoch < args.epochs and (n_gpu > 1 and torch.distributed.get_rank() == 0 or n_gpu <= 1):
+        if avg_val_loss < min_val_loss :
+            min_val_loss = avg_val_loss
+            
+        logger.info("  Min validation loss: {:} at epoch {:}".format(min_val_loss, epoch))    
+        if  epoch < args.epochs and (n_gpu > 1 and torch.distributed.get_rank() == 0 or n_gpu <= 1):
             logger.info("** ** * Saving fine-tuned model ** ** * ")
             epoch_output_dir = args.output_dir / f"mlm_epoch_{epoch}.pt"
             
-            save_model(model, optimizer, scheduler, global_step, epoch_output_dir)
+            save_model(model, optimizer, scheduler, global_step, min_val_loss, epoch_output_dir)
             
-            min_val_loss = avg_val_loss
             logger.info('model saved in {} global step at {}'.format(global_step, epoch_output_dir))
   
 def main():
@@ -301,15 +305,19 @@ def main():
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     # Load finetuned model 
     
+    # assign min threshold with max value
+    
+    
     model = BIOBERT_MODEL
     if args.load_save_model and args.model_file.is_file():
-        load_model(args.model_file, model, device, optimizer, scheduler)
+        min_val_loss = load_model(args.model_file, model, device, optimizer, scheduler)
         
         logger.info("Model loaded successfully")
-        train(args, model, optimizer, scheduler, loss_fn, validation_dataset, train_dataset, test_dataset)
+        train(args, model, optimizer, scheduler, min_val_loss, loss_fn, validation_dataset, train_dataset, test_dataset)
     else:    
         # Train model
-        train(args, model, optimizer, scheduler, loss_fn, validation_dataset, train_dataset, test_dataset)
+        min_val_loss = float('inf')
+        train(args, model, optimizer, scheduler, min_val_loss, loss_fn, validation_dataset, train_dataset, test_dataset)
 
 if __name__ == '__main__':
     # python mlm_finetune.py --data_dir mlm_prepared_data_3/ --output_dir mlm_finetune_output_3 --pred_dir 
