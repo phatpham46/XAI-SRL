@@ -5,7 +5,6 @@ import sys
 import os
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 # sys.path.append('../')
-
 # sys.path.append('/content/SRLPredictionEasel')
 sys.path.append('/kaggle/working/SRLPredictionEasel')
 
@@ -33,6 +32,7 @@ def make_argument(parser):
     parser.add_argument("--pred_dir", type=Path, required=True)
     parser.add_argument("--log_dir", type=Path, required=False, 
                         default=Path("logs_mlm"))
+  
     parser.add_argument("--model_file", type=Path, required=False)
     parser.add_argument("--bert_model", type=str, required=False, 
                         default=BERT_PRETRAIN_MODEL,
@@ -115,7 +115,9 @@ def load_model(loadPath, model, device, optimizer, scheduler):
     model.load_state_dict(loadedDict['model_state_dict'])
     optimizer.load_state_dict(loadedDict['optimizer_state'])
     scheduler.load_state_dict(loadedDict['scheduler_state'])    
-    min_val_loss = loadedDict['min_val_loss']  
+    
+    
+    min_val_loss = loadedDict['min_val_loss']   
     return min_val_loss
             
 def train(args, model, optimizer, scheduler, min_val_loss, loss_fn:CustomLoss, val_dataset:CustomDataset, train_dataset:CustomDataset, test_dataset:CustomDataset):
@@ -184,8 +186,9 @@ def train(args, model, optimizer, scheduler, min_val_loss, loss_fn:CustomLoss, v
         t0 = time.time()
         with tqdm(total=len(train_dataloader), desc=f"Epoch {epoch}") as progress:
             for batch in train_dataloader:
-                
-                batch = tuple(t.to(device) for t in batch)  
+                batch = tuple(t.to(device) if isinstance(t, torch.Tensor) else t for t in batch)
+
+                # batch = tuple(t.to(device) for t in batch)  
                 b_mask_input_id, b_attention_mask, b_token_type_id, b_label_id = batch 
                 
                 # step 1: zero the gradient  
@@ -319,7 +322,8 @@ def main():
 
 if __name__ == '__main__':
     # python mlm_finetune.py --data_dir mlm_prepared_data_3/ --output_dir mlm_finetune_output_3 --pred_dir 
-    
+    # python mlm_finetune.py --data_dir mlm_prepared_data_3/ --output_dir mlm_finetune_output_3 --pred_dir mlm_predition --load_save_model --model_file ././mlm_finetune_output/model/mlm_epoch_4.pt
+
     main()
     
     
