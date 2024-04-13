@@ -3,7 +3,7 @@ conllsrl:
   config_name: dmis-lab/biobert-base-cased-v1.2  #bert-base-uncased
   dropout_prob: 0.2
   #label_map_or_file: /content/drive/MyDrive/ColabNotebooks/SRL_data/coNLL_tsv/ner_coNLL_train_label_map.joblib
-  label_map_or_file: ../data/coNLL_tsv/ner_coNLL_train_label_map.joblib
+  label_map_or_file: /kaggle/input/srl_data/ner_coNLL_train_label_map.joblib
   metrics:
   - seqeval_f1_score
   - seqeval_precision

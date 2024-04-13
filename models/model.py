@@ -137,7 +137,7 @@ class multiTaskModel:
     def make_optimizer(self, numTrainSteps, lr, eps, warmupSteps=0):
         
         # we will use AdamW optimizer from huggingface       
-        optimizer = AdamW(self.network.parameters(), lr=lr, eps = eps)
+        optimizer = torch.optim.AdamW(self.network.parameters(), lr=lr, eps = eps)
 
         
         # lr scheduler
