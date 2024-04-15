@@ -40,6 +40,7 @@ def is_POS_match(b_input_id, b_logit_id, b_label_id):
         
         b_matching_term = []
         b_pred_id = []
+        b_origin_input_id = []
         b_pred_pos_tag_id = []
         b_origin_pos_tag_id = []
         for idx_sample in range(b_input_id.shape[0]):
@@ -83,10 +84,10 @@ def is_POS_match(b_input_id, b_logit_id, b_label_id):
 
             b_matching_term.append(matching_term_tensor)
             b_pred_id.append(pred_id)
+            b_origin_input_id.append(origin_input_id)
             b_pred_pos_tag_id.append(pos_tag_id_pred)
             b_origin_pos_tag_id.append(pos_tag_id_origin)
-            
-        return b_matching_term, b_pred_id, b_pred_pos_tag_id, b_origin_pos_tag_id
+        return b_matching_term, b_pred_id, b_origin_input_id, b_pred_pos_tag_id, b_origin_pos_tag_id
 class CustomLoss(nn.modules.loss._Loss):
     def __init__(self, **kwargs):
         super(CustomLoss, self).__init__(**kwargs)

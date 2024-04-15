@@ -46,7 +46,7 @@ class CustomDataset(Dataset):
     #     }
     #     return data_dict
     
-    def get_sampler(self, local_rank):
+    def _get_sampler(self, local_rank):
         if local_rank == -1:
             return RandomSampler(self.data)
         else:
@@ -61,7 +61,7 @@ class CustomDataset(Dataset):
        
         dataloader = DataLoader(
             dataset= dataset, 
-            sampler= self.get_sampler(local_rank),
+            sampler= self._get_sampler(local_rank),
             batch_size=batch_size,
             drop_last=drop_last,
             num_workers=NUM_CPU)  

@@ -27,8 +27,8 @@ def eval_model(args, logger, model, epoch, loss_fn=CustomLoss, validation_datalo
     all_pred_pos_tag_is = []
     all_origin_pos_tag_id = []
     all_pred_id = []
-    all_origin_id = []
-    
+    all_mask_id = []
+    all_origin_input_id = []
     for batch in tqdm(validation_dataloader, total=len(validation_dataloader), desc = 'Eval'):
       
       batch = tuple(t.to(device) for t in batch)
@@ -42,12 +42,12 @@ def eval_model(args, logger, model, epoch, loss_fn=CustomLoss, validation_datalo
                          labels=b_labels) 
       
       # get pos tag prediction
-      _, b_pred_id, b_pred_pos_tag_id, b_origin_pos_tag_id = is_POS_match(b_input_ids, output.logits, b_labels)   
+      _, b_pred_id, b_origin_input_id, b_pred_pos_tag_id, b_origin_pos_tag_id = is_POS_match(b_input_ids, output.logits, b_labels)   
       all_pred_pos_tag_is.extend(b_pred_pos_tag_id)
       all_origin_pos_tag_id.extend(b_origin_pos_tag_id)
       all_pred_id.extend(b_pred_id)
-      all_origin_id.extend(b_input_ids)
-      
+      all_mask_id.extend(b_input_ids)
+      all_origin_input_id.extend(b_origin_input_id)
       
       # step 2. compute the loss
       loss_batch = loss_fn(output.logits, b_input_ids, b_labels)
@@ -58,7 +58,7 @@ def eval_model(args, logger, model, epoch, loss_fn=CustomLoss, validation_datalo
       batch_num += 1
       
      
-    assert len(all_pred_pos_tag_is) == len(all_origin_pos_tag_id) == len(all_pred_id) == len(all_origin_id), logger.debug("lengths are not equal")
+    assert len(all_pred_pos_tag_is) == len(all_origin_pos_tag_id) == len(all_pred_id) == len(all_mask_id), logger.debug("lengths are not equal")
     
     avg_eval_loss = total_loss / batch_num
     val_time = time.time() - t0
@@ -67,11 +67,14 @@ def eval_model(args, logger, model, epoch, loss_fn=CustomLoss, validation_datalo
     del total_loss
     gc.collect()
     if args.pred_dir is not None and wrt_path is not None:
-        df = pd.DataFrame({"prediction_pos_tag_id" : [t.cpu().numpy() for t in all_pred_pos_tag_is], "label_pos_tag_id" : [t.cpu().numpy() for t in all_origin_pos_tag_id], 
-                            "prediction_id" : [t.cpu().numpy() for t in all_pred_id], "origin_id" : [t.cpu().numpy() for t in all_origin_id]})
+        df = pd.DataFrame({"prediction_pos_tag_id" : [t.cpu().numpy() for t in all_pred_pos_tag_is], 
+                            "label_pos_tag_id" : [t.cpu().numpy() for t in all_origin_pos_tag_id], 
+                            "prediction_id" : [t.cpu().numpy() for t in all_pred_id], 
+                            "origin_id" : [t.cpu().numpy() for t in all_origin_input_id],
+                            "mask_id" : [t.cpu().numpy() for t in all_mask_id]})
         
         savePath = os.path.join(args.pred_dir, "pred_mlm_{}_{}.tsv".format(wrt_path, epoch))
         df.to_csv(savePath, sep = "\t", index = False)
     
-    del all_pred_pos_tag_is, all_origin_pos_tag_id, all_pred_id, all_origin_id
+    del all_pred_pos_tag_is, all_origin_pos_tag_id, all_pred_id, all_origin_input_id, all_mask_id
     return avg_eval_loss
