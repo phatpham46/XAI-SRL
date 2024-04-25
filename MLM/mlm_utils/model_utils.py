@@ -1,6 +1,6 @@
 import spacy
 from transformers import BertTokenizerFast, BertForMaskedLM
-from MLM.mlm_utils.utils_mlm import count_num_cpu_gpu
+from mlm_utils.utils_mlm import count_num_cpu_gpu
 
 MLM_IGNORE_LABEL_IDX = -1
 VOCAB_SIZE = 28996 
@@ -14,5 +14,6 @@ TOKENIZER = BertTokenizerFast.from_pretrained(BERT_PRETRAIN_MODEL, do_lower_case
 # Load the English language model
 NLP = spacy.load("en_core_web_sm")
 
+POS_TAG_MAPPING = {"NOUN":1, "VERB":2, "ADJ":3, "ADV":4}
 
 

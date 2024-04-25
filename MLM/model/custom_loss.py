@@ -30,64 +30,7 @@ def get_pos_tag(token_id, origin_input_id, label_id):
     return pos_tag_id_origin
 
         
-def is_POS_match(b_input_id, b_logit_id, b_label_id):
-        '''
-        Function to check if the POS tag of the masked token in the logits is the same as the POS tag of the masked token in the original text.
-        Note: This function assumes that the logits are of shape # ([85, 28996]) 
-        lm_label_ids: shape (batch_size, sequence_length)
-        '''
-        '''cho 1 batch'''
-        
-        b_matching_term = []
-        b_pred_id = []
-        b_origin_input_id = []
-        b_pred_pos_tag_id = []
-        b_origin_pos_tag_id = []
-        for idx_sample in range(b_input_id.shape[0]):
-            
-            input_id = b_input_id[idx_sample]
-            logit_id = b_logit_id[idx_sample]
-            label_id = b_label_id[idx_sample]
-            
-            pred_id = input_id.clone() 
-            origin_input_id = input_id.clone()
-            
-            # Find the index of the masked token from lm_label_ids
-            mask_index = torch.where(label_id != -100)[0]
-            masked_idx_input = torch.where(input_id == TOKENIZER.mask_token_id)[0]
-            
-            # make sure masked_idx_input and mask_index are the same using asser
-            assert torch.equal(mask_index, masked_idx_input), "Masked index and label index are not the same."
-            origin_input_id[masked_idx_input] = label_id[mask_index] 
-            
-            
-            # "================= ORIGINAL ============= ")
-            pos_tag_id_origin = get_pos_tag(origin_input_id[mask_index], origin_input_id, label_id)
-            
-            
-            # "-============== PREDICTION =================="
-            pred_id = input_id.clone() 
-            pred = [torch.argmax(logit_id[i]).item() for i in mask_index]
 
-            # Replace the index of the masked token with the list of predicted tokens
-            for i in mask_index:
-                pred_id[i] = pred[i - mask_index[0]]
-            
-            pos_tag_id_pred = get_pos_tag(pred, pred_id, pred_id)
-            
-            
-            # ================== MATCHING TERM ==================
-            matching_term_tensor = torch.zeros_like(pos_tag_id_pred)
-            matching_term_tensor[mask_index] = torch.where(pos_tag_id_pred[mask_index] == pos_tag_id_origin[mask_index], 
-                                        torch.tensor(1), 
-                                        torch.tensor(0))
-
-            b_matching_term.append(matching_term_tensor)
-            b_pred_id.append(pred_id)
-            b_origin_input_id.append(origin_input_id)
-            b_pred_pos_tag_id.append(pos_tag_id_pred)
-            b_origin_pos_tag_id.append(pos_tag_id_origin)
-        return b_matching_term, b_pred_id, b_origin_input_id, b_pred_pos_tag_id, b_origin_pos_tag_id
 class CustomLoss(nn.modules.loss._Loss):
     def __init__(self, **kwargs):
         super(CustomLoss, self).__init__(**kwargs)
@@ -98,7 +41,7 @@ class CustomLoss(nn.modules.loss._Loss):
         b_cross_entropy_term = F.cross_entropy((1-b_logit_id).view(-1, TOKENIZER.vocab_size), b_label_id.view(-1), reduction='none')
     
         # Custom matching term
-        b_matching_term = torch.stack(is_POS_match(b_input_id, b_logit_id, b_label_id)[0]).view(-1).float().requires_grad_(True)
+        b_matching_term = torch.stack(pos_tag_id_mlm_data(b_input_id, b_logit_id, b_label_id)[0]).view(-1).float().requires_grad_(True)
 
         # Combine terms
         b_loss = 0.5 * ((b_cross_entropy_term).requires_grad_(True) + (1.0 * (1 - b_matching_term)).requires_grad_(True))

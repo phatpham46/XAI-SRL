@@ -5,7 +5,7 @@ import torch
 import time
 from tqdm import tqdm
 
-from MLM.model.custom_loss import is_POS_match, CustomLoss
+from MLM.model.custom_loss import pos_tag_id_mlm_data, CustomLoss
 from MLM.model.custom_dataset import CustomDataset
 
 def eval_model(args, logger, model, epoch, loss_fn=CustomLoss, validation_dataloader=CustomDataset, wrt_path=None):
@@ -42,7 +42,7 @@ def eval_model(args, logger, model, epoch, loss_fn=CustomLoss, validation_datalo
                          labels=b_labels) 
       
       # get pos tag prediction
-      _, b_pred_id, b_origin_input_id, b_pred_pos_tag_id, b_origin_pos_tag_id = is_POS_match(b_input_ids, output.logits, b_labels)   
+      _, b_pred_id, b_origin_input_id, b_pred_pos_tag_id, b_origin_pos_tag_id = pos_tag_id_mlm_data(b_input_ids, output.logits, b_labels)   
       all_pred_pos_tag_is.extend(b_pred_pos_tag_id)
       all_origin_pos_tag_id.extend(b_origin_pos_tag_id)
       all_pred_id.extend(b_pred_id)

@@ -5,14 +5,8 @@ import torch
 import pandas as pd
 from tqdm import tqdm
 from sklearn.model_selection import train_test_split
-from mlm_utils.transform_func import get_pos_tag_word, get_word_list, check_data_dir, decode_token, encode_text, get_files
+from mlm_utils.transform_func import get_pos_tag_word, get_word_list, check_data_dir, decode_token, encode_text, get_files, pos_tag_mapping
 from mlm_utils.model_utils import MAX_SEQ_LEN, NLP, TOKENIZER
-
-MAX_SEQ_LEN = 85
-NUMBER_WORKERS = 5 
-BERT_PRETRAINED_MODEL = 'dmis-lab/biobert-base-cased-v1.2'
-VOCAB_SIZE = 28996 
-wwm_probability = 0.1
 
 def convert_csv_to_tsv(readDir: str, writeDir: str) -> None:
     '''
@@ -80,7 +74,6 @@ def convert_csv_to_tsv(readDir: str, writeDir: str) -> None:
             nerW.write("{}\t{}\t{}\n".format(uid[i], labelNer[i], text[i]))
     nerW.close()
  
-
 def get_tokens_for_words(words: list, input_ids: list, offsets: list) -> dict:
     '''
     Input:
@@ -122,27 +115,30 @@ def get_tokens_for_words(words: list, input_ids: list, offsets: list) -> dict:
                                 if item not in except_tokens ]  for (word, tokens) in word_dict.items() }
 
 
-def mask_content_words(ids: torch.Tensor, word_dict: dict) -> tuple:
+def masking_sentence_word(words: list, input_ids: torch.tensor, offsets: list):
     '''
-    input:
-        ids: sample_id 
-        word_dict: {'The': [tensor(170)], 'capital': [tensor(1109), tensor(3007)], ....}
-    output:
-        masked_sentences: [tensor([  101,  1103, 175, 10555,  103,   103,   103,   102])]
-        label_ids: [tensor(6468)], [tensor(1568), tensor(13892)]
+    Input: 
+        words = ['The', 'capital', 'of', 'France', 'is', 'Paris', '.']
+        input_ids: [tensor([  101,  1103, 175, 10555,  1110,   1113,   119,   102])]
+    Output: 
+        masked_id_sentences: [tensor([  101,  1103, 175, 10555,  103,   103,   103,   102])]
+        pos_tag_id: [0, 0, 0, 0, 1, 1, 1, 0] (1: noun, 2: verb, ..)
     '''
-    labels = []
-    masked_sentences = []
-    except_tokens = [TOKENIZER.cls_token_id, TOKENIZER.sep_token_id, TOKENIZER.pad_token_id, TOKENIZER.unk_token_id]
+    # get a list of token for the word
+    word_dict = get_tokens_for_words(words, input_ids, offsets)
+    
+    # create a list of masked sentence from one input id
+    pos_tag_id = []
+    masked_id_sentences = []
   
     for (key, value) in word_dict.items():
-        masked_ids = ids.clone() # torch.Size([1, 85])
+        masked_ids = input_ids.clone() 
         origin_sample = decode_token(masked_ids[0], skip_special_tokens=True)
         if get_pos_tag_word(key, origin_sample).get(key) in ['NOUN', 'VERB', 'ADJ', 'ADV']:
             
             for i in range(len(masked_ids[0]) - len(value) + 1):
                 masked_id = masked_ids.clone()
-                label = torch.full_like(masked_id, fill_value=-100)
+                label = torch.full_like(masked_id, fill_value=0)
                 masked_indice = torch.full_like(masked_id, fill_value=0)
             
                 if torch.equal(torch.as_tensor(masked_id[0][i:i+len(value)]).clone().detach(), torch.as_tensor(value).clone().detach()):
@@ -151,30 +147,14 @@ def mask_content_words(ids: torch.Tensor, word_dict: dict) -> tuple:
                     
                     for idx, mask in enumerate(masked_indice[0]):
                         if mask == 1:
-                            label[0][idx] = ids[0][idx]
+                            label[0][idx] = pos_tag_mapping(get_pos_tag_word(key, origin_sample).get(key))
                             
-                    masked_sentences.append(masked_id)
-                    labels.append(label)
-            
-    return masked_sentences, labels
-
-def masking_sentence_word(words: list, input_ids: torch.tensor, offsets: list) -> tuple:
-    '''
-    Input: 
-        words = ['The', 'capital', 'of', 'France', 'is', 'Paris', '.']
-    Output: 
-        masked_sentences = [tensor([  101,  1103, 175, 10555,  1110,   103,   119,   102]), [  101,  1103,  2364, 10555,  103,   103,   119,   102]] 
-        label_ids = [tensor(6468)], [tensor(1568), tensor(13892)]
-    '''
-    # get a list of token for the word
-    word_dict = get_tokens_for_words(words, input_ids, offsets)
-   
-    # masked the tokens if the word is the content word
-    masked_sentences, label_ids = mask_content_words(input_ids, word_dict)
+                    masked_id_sentences.append(masked_id)
+                    pos_tag_id.append(label)
     
-    return masked_sentences, label_ids
+    return input_ids, masked_id_sentences, pos_tag_id
 
-def data_preprocessing(dataDir: str, wriDir: str) -> None:
+def data_preprocessing(dataDir: str, wriDir: str):
     '''
     data_preprocessing('./interim/', './mlm_output/')
     Function to create data in MLM format.
@@ -207,20 +187,22 @@ def data_preprocessing(dataDir: str, wriDir: str) -> None:
                 tokenized_sentence = encode_text(' '.join(word_lst))
                 
                 # Mask the content words
-                masked_sens, label_ids = masking_sentence_word(
+                input_id, masked_sens, pos_tag_ids = masking_sentence_word(
                     word_lst, 
                     tokenized_sentence['input_ids'], 
                     tokenized_sentence['offset_mapping'][0]
                     )
                 # Create a feature for each masked sentence
-                for mask, label in zip(masked_sens, label_ids):
+                for mask, pos_tag_id in zip(masked_sens, pos_tag_ids):
                     assert len(mask[0]) == MAX_SEQ_LEN, "Mismatch between processed tokens and labels"
                     
                     feature = {
+                        'input_id': input_id[0].numpy().tolist(),
                         'token_id': mask[0].numpy().tolist(), 
                         'attention_mask': tokenized_sentence['attention_mask'][0].numpy().tolist(),  
-                        'token_type_ids': tokenized_sentence['token_type_ids'][0].numpy().tolist(), 
-                        'labels': label[0].numpy().tolist()}
+                        'token_type_ids': tokenized_sentence['token_type_ids'][0].numpy().tolist(),
+                        'pos_tag_id': pos_tag_id[0].numpy().tolist()
+                       }
                 
                     features.append(feature)
                 
@@ -230,10 +212,10 @@ def data_preprocessing(dataDir: str, wriDir: str) -> None:
             
         # Write to a CSV file
         df_feature = pd.DataFrame(features)
-        df_feature.to_csv(writeFile, index = False)
+        #df_feature.to_csv(writeFile, index = False)
+        df_feature.to_json(writeFile.replace('csv', 'json'), orient='records', lines=True)
            
-
-def data_split(dataDir: str, wriDir: str) -> tuple:
+def data_split(dataDir: str, wriDir: str):
     
     '''
     data_split('mlm_output', 'mlm_prepared_data')
@@ -268,12 +250,9 @@ def data_split(dataDir: str, wriDir: str) -> tuple:
           
 def main():
     
-    # data_preprocessing('./interim/', './mlm_output_3/')
+    data_preprocessing('./interim/', './mlm_output_4/')
     
-    data_split('./mlm_output_3/', './mlm_prepared_data_3/')
+    # data_split('./mlm_output_3/', './mlm_prepared_data_3/')
     
 if __name__ == "__main__":
     main() 
-
-
-

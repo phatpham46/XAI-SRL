@@ -12,15 +12,17 @@ logs/
 logs_tb/
 MLM/coNLL_tsv/
 MLM/interim/
+MLM/list_content_word_v2/
 MLM/runs/
 MLM/logs_mlm/
 MLM/mlm_finetune_output/
 MLM/mlm_output/
-MLM/mlm_output_2/
+MLM/mlm_output_4/
 MLM/mlm_output_3/
 MLM/mlm_prepared_data/
 MLM/mlm_prepared_data_2/
 MLM/mlm_prepared_data_3/
+MLM/word_present_each_file/
 MLM/raw/
 
 

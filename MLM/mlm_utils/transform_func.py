@@ -1,9 +1,10 @@
 
 import os
 import numpy as np
+import pandas as pd
 import torch
-from mlm_utils.model_utils import NLP
-from mlm_utils.model_utils import MLM_IGNORE_LABEL_IDX, VOCAB_SIZE, BATCH_SIZE, EPOCHS, MAX_SEQ_LEN, BERT_PRETRAIN_MODEL, NLP, TOKENIZER
+from tqdm import tqdm
+from mlm_utils.model_utils import NLP, TOKENIZER, MAX_SEQ_LEN, POS_TAG_MAPPING
 
 def check_data_dir(data_dir: str, auto_create=False) -> None:
     """ Check if the data directory exists. If it does not exist, create it if auto_create is True.
@@ -90,7 +91,7 @@ def get_max_length_word(pred_list: list) -> int:
     return max_len
 
 def pos_tag_mapping(pos_tag):
-    if pos_tag =="NOUN":
+    if pos_tag == "NOUN":
         return 1
     elif pos_tag =="VERB":
         return 2
@@ -99,7 +100,7 @@ def pos_tag_mapping(pos_tag):
     elif pos_tag == "ADV":
         return 4
     else:
-        return -1
+        return 0
 
 def get_pos_tag_id(word_dict:dict, pos_tag_dict: dict, label_id:list):
     '''
@@ -108,7 +109,6 @@ def get_pos_tag_id(word_dict:dict, pos_tag_dict: dict, label_id:list):
         input:  129, 15, 324, 34, 255, 12
         output  1, 1, 1, 2, 3, 4 (NOUN, NOUN, NOUN, VERB, ADJ, ADV)
     '''
-    
     pos_tag_id = torch.full_like(label_id, fill_value=-1)
     
     for key in pos_tag_dict.keys():
@@ -118,7 +118,8 @@ def get_pos_tag_id(word_dict:dict, pos_tag_dict: dict, label_id:list):
         for i in range(len(label_id) - len(tokens) + 1):
             if torch.equal(torch.as_tensor(label_id[i:i+len(tokens)]).clone().detach(), torch.as_tensor(tokens).clone().detach()):
                
-                pos_tag_id[i:i+len(tokens)] = pos_tag_mapping(pos_tag_dict.get(key))
+                # pos_tag_id[i:i+len(tokens)] = pos_tag_mapping(pos_tag_dict.get(key))
+                pos_tag_id[i:i+len(tokens)] = POS_TAG_MAPPING[pos_tag_dict.get(key)]
  
     return pos_tag_id
 
@@ -163,3 +164,35 @@ def encode_text(text: str) -> dict:
                     return_attention_mask = True,
                     return_offsets_mapping=True  
                 )
+
+
+def create_list_content_word(dataDir, wriDir):
+    '''
+    create_list_content_word("./interim", "./list_content_word" )
+    '''
+    check_data_dir(dataDir, False)
+    check_data_dir(wriDir, True)
+    
+    lists = {"NOUN": [], "VERB": [], "ADJ": [], "ADV": []}
+    for file in get_files(dataDir):
+        data = pd.read_csv(os.path.join(dataDir, file))
+        print("Processing file:", file)
+        
+        with tqdm(total=len(data['text'])) as pbar:
+            for sample in data['text']: 
+                doc = NLP(sample)
+                for token in doc:
+                    if token.pos_ in lists:
+                        lists[token.pos_].append({"word": token.text, "tokens": TOKENIZER.encode(token.text, add_special_tokens=False)})
+                pbar.update(1)
+        
+    for pos, lst in lists.items():
+        df = pd.DataFrame(lst)
+        df['word'] = df['word'].str.lower()
+        df.drop_duplicates(subset='word', keep = 'first', inplace = True)  # Remove duplicates
+        df.to_csv(os.path.join(wriDir, f'{pos.lower()}.csv'), index=False)
+    
+    print("Done!")
+
+           
+        
