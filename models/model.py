@@ -2,8 +2,9 @@ import torch
 import torch.nn as nn
 import logging
 import numpy as np
-from models.dropout import DropoutWrapper
-from utils.data_utils import ModelType, NLP_MODELS, TaskType, LOSSES
+from models import dropout 
+from utils import data_utils
+
 from transformers import AdamW, get_linear_schedule_with_warmup
 logger = logging.getLogger("multi_task")
 
@@ -153,7 +154,7 @@ class multiTaskModel:
         lossClassList = []
         for taskId, taskName in self.taskParams.taskIdNameMap.items():
             lossName = self.taskParams.lossMap[taskName].name.lower()
-            lossClass = LOSSES[lossName](alpha=self.taskParams.lossWeightMap[taskName])
+            lossClass = data_utils.LOSSES[lossName](alpha=self.taskParams.lossWeightMap[taskName])
             lossClassList.append(lossClass)
         return lossClassList
 
