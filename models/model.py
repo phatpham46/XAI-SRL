@@ -2,8 +2,8 @@ import torch
 import torch.nn as nn
 import logging
 import numpy as np
-from models import dropout 
-from utils import data_utils
+from models.dropout import DropoutWrapper
+from utils.data_utils import ModelType, NLP_MODELS, TaskType, LOSSES
 from transformers import AdamW, get_linear_schedule_with_warmup
 logger = logging.getLogger("multi_task")
 
@@ -153,7 +153,7 @@ class multiTaskModel:
         lossClassList = []
         for taskId, taskName in self.taskParams.taskIdNameMap.items():
             lossName = self.taskParams.lossMap[taskName].name.lower()
-            lossClass = data_utils.LOSSES[lossName](alpha=self.taskParams.lossWeightMap[taskName])
+            lossClass = LOSSES[lossName](alpha=self.taskParams.lossWeightMap[taskName])
             lossClassList.append(lossClass)
         return lossClassList
 
@@ -170,52 +170,48 @@ class multiTaskModel:
         return y 
 
     def update_step(self, batchMetaData, batchData):
-        # train mode
+        #changing to train mode
         self.network.train()
         target = batchData[batchMetaData['label_pos']]
-        
-        # send label to gpu if present
+
+        #transfering label to gpu if present
         if self.params['gpu']:
             target = self._to_cuda(target)
-
 
         taskId = batchMetaData['task_id']
         taskName = self.taskParams.taskIdNameMap[taskId]
         logger.debug('task id for batch {}'.format(taskId))
-        
-        
-        # making forward pass
-        # batchData: [tokenIdsBatchTensor, typeIdsBatchTensor, masksBatchTensor, labelsTensor]
+        #making forward pass
+        #batchData: [tokenIdsBatchTensor, typeIdsBatchTensor, masksBatchTensor, labelsTensor]
         # batchData would have typeIdsBatchTensor or masksBatchTensor as None if the model doesn't support it
-        # model forward function input [tokenIdsBatchTensor, typeIdsBatchTensor, masksBatchTensor, taskId]
+        #model forward function input [tokenIdsBatchTensor, typeIdsBatchTensor, masksBatchTensor, taskId]
         # we are not going to send labels in batch
         logger.debug('len of batch data {}'.format(len(batchData)))
         logger.debug('label position in batch data {}'.format(batchMetaData['label_pos']))
+
         modelInputs = batchData[:batchMetaData['label_pos']]
-        
-       
         modelInputs += [taskId]
         modelInputs += [taskName]
-        
+
         logger.debug('size of model inputs {}'.format(len(modelInputs)))
-        logits = self.network(*modelInputs)[1]
-        
+        # logits = self.network(*modelInputs)
+        sequenceOutputBedding = self.network(*modelInputs)
+        logits = self.network.logit_to_prob(batchMetaData['task_type'], taskName, sequenceOutputBedding)
         #calculating task loss
         self.taskLoss = 0
         logger.debug('size of model output logits {}'.format(logits.size()))
-        logger.debug('size of target {}'.format(target.size())) #torch.Size([32, 50])
+        logger.debug('size of target {}'.format(target.size()))
         if self.lossClassList[taskId] and (target is not None):
             self.taskLoss = self.lossClassList[taskId](logits, target, attnMasks=modelInputs[2])
-           
-            # tensorboard details
+            #tensorboard details
             self.tbTaskId = taskId
             self.tbTaskLoss = self.taskLoss.item()
-        
         taskLoss = self.taskLoss / self.params['grad_accumulation_steps']
         taskLoss.backward()
         self.accumulatedStep += 1
 
-        # gradients will be updated only when accumulated steps become mentioned number in grad_acc_steps (one global update)
+        #gradients will be updated only when accumulated steps become
+        #mentioned number in grad_acc_steps (one global update)
         if self.accumulatedStep == self.params['grad_accumulation_steps']:
             logging.debug('model updated.')
             if self.params['grad_clip_value'] > 0:
@@ -227,11 +223,34 @@ class multiTaskModel:
 
             self.optimizer.zero_grad()
             self.globalStep += 1
-           
-            # reset accumulated steps
+            #resetting accumulated steps
             self.accumulatedStep = 0
-        
-    def predict_step(self, batchMetaData, batchData):
+            
+    def get_word_embedding(self, batchMetaData, batchData):
+        self.network.eval()
+        taskId = batchMetaData['task_id']
+        taskName = self.taskParams.taskIdNameMap[taskId]
+        modelInputs = batchData + [taskId] + [taskName]
+        taskType = batchMetaData['task_type']
+        sequenceOutputBedding = self.network(*modelInputs)
+        outLogits = self.network.logit_to_prob(taskType, taskName, sequenceOutputBedding)
+        if taskType == TaskType.NER:
+            outLogitsSoftmax = nn.functional.softmax(outLogits, dim = 2).data.cpu().numpy()
+            predicted = np.argmax(outLogitsSoftmax, axis = 2)
+            predicted = predicted.tolist()
+            predictedTags = []
+            attnMasksBatch = batchData[2]
+            if attnMasksBatch is not None:
+                actualLengths = attnMasksBatch.cpu().numpy().sum(axis = 1).tolist()
+                for i, pred in enumerate(predicted):
+                    predictedTags.append(pred[:actualLengths[i]])
+                return predictedTags, sequenceOutputBedding
+            else:
+                return predicted, sequenceOutputBedding
+        else:
+            raise ValueError("Task type for prediction batch not known {}".format(taskType))
+
+    def predict_step(self, batchMetaData, batchData, sequenceOutputEmbedding=None):
         '''
         Function for predicting on a batch from model. Will be used for inference and dev/test set.
         The labels in case of eval (predictions) are kept in batchMetaData and are not Tensors
@@ -239,49 +258,67 @@ class multiTaskModel:
         self.network.eval()
         taskId = batchMetaData['task_id']
         taskName = self.taskParams.taskIdNameMap[taskId]
-      
+        taskType = batchMetaData['task_type']
         modelInputs = batchData + [taskId] + [taskName]
         logger.debug("Pred model input length: {}".format(len(modelInputs)))
 
         #making forward pass to get logits
-        outLogits = self.network(*modelInputs)[1]
+        # outLogits, sequenceOutputBedding = self.network(*modelInputs) 
+        # print('type word embedding:', type(self.network(*modelInputs)))
+        # print('size word embedding:', self.network(*modelInputs).size())
+        # print('word embedding:', self.network(*modelInputs))
+        sequenceOutputBedding = self.network(*modelInputs) \
+            if (sequenceOutputEmbedding is None and taskType == TaskType.NER) \
+                else sequenceOutputEmbedding
+        # print('word embedding masked: ', sequenceOutputBedding)
+        
+        outLogits = self.network.logit_to_prob(taskType, taskName, sequenceOutputBedding)
         logger.debug("Pred model logits shape: {}".format(outLogits.size()))
-      
-    
-        outLogitsSoftmax = nn.functional.softmax(outLogits, dim = 2).data.cpu().numpy()
-        ouLogitsSigmoid = nn.functional.sigmoid(outLogits).data.cpu().numpy()
-        #shape of outlogits now (batchSize, maxSeqLen, classNum)
-        
-        predicted = np.argmax(outLogitsSoftmax, axis = 2)
-        # here in score, we only want to give out the score of the class of tag, which is maximum
-        predScore = np.max(ouLogitsSigmoid, axis = 2).tolist()
-        
-        #shape of predicted now (batchSize, maxSeqLen)
-        logger.debug("Final Predictions shape after argmx: {}".format(predicted.shape))
-        predicted = predicted.tolist()
-        
-        
-        # get the attention masks, we need to discard the predictions made for extra padding
-        attnMasksBatch = batchData[2]
-        predictedTags = []
-        predScoreTags = []
-        if attnMasksBatch is not None:
-            #shape of attention Masks (batchSize, maxSeqLen)
-            actualLengths = attnMasksBatch.cpu().numpy().sum(axis = 1).tolist()
-            for i, (pred, sc) in enumerate(zip(predicted, predScore)):
-                predictedTags.append( pred[:actualLengths[i]] )
-                predScoreTags.append( sc[:actualLengths[i]])
+        #process logits as per task type
+        if taskType in (TaskType.SingleSenClassification, TaskType.SentencePairClassification):
+            outLogitsSoftmax = nn.functional.softmax(outLogits, dim = 1).data.cpu().numpy()
+            outLogitsSigmoid = nn.functional.sigmoid(outLogits).data.cpu().numpy()
+            predictedClass = np.argmax(outLogitsSoftmax, axis = 1)
+
+            logger.debug("Final Predictions shape after argmx: {}".format(predictedClass.shape))
+            predictedClass = predictedClass.tolist()
+            return predictedClass, outLogitsSigmoid
+
+        if taskType == TaskType.NER:
+            outLogitsSoftmax = nn.functional.softmax(outLogits, dim = 2).data.cpu().numpy()
+            ouLogitsSigmoid = nn.functional.sigmoid(outLogits).data.cpu().numpy()
+            predicted = np.argmax(outLogitsSoftmax, axis = 2)
+            predScore = np.max(ouLogitsSigmoid, axis = 2).tolist()
+
+            outLogits = outLogits.data.cpu().numpy()
             
-            return predictedTags, predScoreTags
+            logger.debug("Final Predictions shape after argmx: {}".format(predicted.shape))
+            predicted = predicted.tolist()
+            attnMasksBatch = batchData[2]
+            predictedTags = []
+            predScoreTags = []
+            outLogitsSoftmaxTags = []
+            sequenceOutputBeddingTags = []
+            if attnMasksBatch is not None:
+                actualLengths = attnMasksBatch.cpu().numpy().sum(axis = 1).tolist()
+                for i, (pred, sc) in enumerate(zip(predicted, predScore)):
+                    predictedTags.append( pred[:actualLengths[i]] )
+                    predScoreTags.append( sc[:actualLengths[i]])
+                    # NOTE
+                    outLogitsSoftmaxTags.append(outLogitsSoftmax[i][:actualLengths[i]])
+                    sequenceOutputBeddingTags.append(sequenceOutputBedding[i][:actualLengths[i]])
+                return predictedTags, predScoreTags, outLogitsSoftmaxTags, sequenceOutputBeddingTags
+            else:
+                return predicted, predScore, outLogitsSoftmax, sequenceOutputBedding
         else:
-            return predicted, predScore
-       
+            raise ValueError("Task type for prediction batch not known {}".format(taskType))
 
     def save_multi_task_model(self, savePath):
         '''
         We will save the model parameters with state dict.
         Also the current optimizer state.
-        Along with the current global_steps and epoch which would help for resuming training
+        Along with the current global_steps and epoch which would help
+        for resuming training
         Plus we will save the task parameters object created from the task file.
         The same object shall be used for this saved model
         '''
@@ -291,22 +328,23 @@ class multiTaskModel:
                 'scheduler_state' : self.scheduler.state_dict(),
                 'global_step' : self.globalStep,
                 'task_params' : self.taskParams}
-        
         torch.save(toSave, savePath)
+        # save to gg drive 'toSave'
         logger.info('model saved in {} global step at {}'.format(self.globalStep, savePath))
 
     def load_multi_task_model(self, loadedDict):
-        
+
         '''
         Need to check state dict for multi-gpu and single-gpu compatibility
         '''
-        
+        # anyway stripping module from front (if present/not present)
         loadedDict['model_state_dict'] = {k.lstrip('module.'):v for k, v in loadedDict['model_state_dict'].items()}
         if torch.cuda.device_count() > 1:
+            #current network requires 'module'
             loadedDict['model_state_dict'] = {'module.'+k : v for k, v in loadedDict['model_state_dict'].items()}
 
-
         self.network.load_state_dict(loadedDict['model_state_dict'])
+        #print(self.network.state_dict().keys())
         self.optimizer.load_state_dict(loadedDict['optimizer_state'])
         self.scheduler.load_state_dict(loadedDict['scheduler_state'])
         self.globalStep = loadedDict['global_step']
@@ -318,26 +356,25 @@ class multiTaskModel:
             #current network requires 'module'
             loadedDict['model_state_dict'] = {'module.'+k : v for k, v in loadedDict['model_state_dict'].items()}
 
-        # filling in weights from saved shared model to model
+        #filling in weights from saved shared model to model
         pretrainedDict = loadedDict['model_state_dict']
         pretrainedTaskParams = loadedDict['task_params']
-       
+        #print('pretrained model keys: ', pretrainedDict.keys())
         modelDict = self.network.state_dict()
+        #print('new model keys: ', modelDict.keys())
+
         logger.info('transferring weight of shared model')
-        
         updateDict = {k :pretrainedDict[k] for k in modelDict if k.startswith('sharedModel') or k.startswith('poolerLayer')}
         logger.info('number of parameters transferred for shared model {}'.format(len(updateDict)))
 
         logger.info('looking for common parameters for task specific headers...')
-        
-        
         for taskId, taskName in pretrainedTaskParams.taskIdNameMap.items():
             for key in modelDict:
                 if key.startswith('allHeaders.{}'.format(taskName)):
                     updateDict[key] = pretrainedDict[key]
                     logger.info('transferring parameter for task header: {}'.format(taskName))
         
-       
+        #print('update dict: ', updateDict.keys())
         modelDict.update(updateDict)
         self.network.load_state_dict(modelDict)
 
