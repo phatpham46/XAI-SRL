@@ -193,6 +193,10 @@ def create_list_content_word(dataDir, wriDir):
         df.to_csv(os.path.join(wriDir, f'{pos.lower()}.csv'), index=False)
     
     print("Done!")
+    
+    
+def test_multiprocess(x):
+    return x*x
 
            
         

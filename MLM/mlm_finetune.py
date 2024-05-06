@@ -320,8 +320,7 @@ def main():
         min_val_loss = float('inf')
         train(args, model, optimizer, scheduler, min_val_loss, loss_fn, validation_dataset, train_dataset, test_dataset)
 
-def test_multiprocess(x):
-    return x*x
+
 
 if __name__ == '__main__':
     # python mlm_finetune.py --data_dir mlm_prepared_data_3/ --output_dir mlm_finetune_output_3 --pred_dir 
