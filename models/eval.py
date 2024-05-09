@@ -19,17 +19,14 @@ def evaluate(dataSet, batchSampler, dataLoader, taskParams,
     allLabels = [[] for _ in range(numTasks)]
     allScores = [[] for _ in range(numTasks)]
     allIds = [[] for _ in range(numTasks)]
-    
-    allLogitsSigmoid = [[] for _ in range(numTasks)]
-    allSequenceOutput = [[] for _ in range(numTasks)]
-    allIndexChangeSequenceOutput = [[] for _ in range(numTasks)]
-    
+
     for batchMetaData, batchData in tqdm(dataLoader, total=numStep, desc = 'Eval'):
         batchMetaData, batchData = batchSampler.patch_data(batchMetaData,batchData, gpu = gpu)
-        prediction, scores, _ouLogitsSigmoid, sequenceOutput = model.predict_step(batchMetaData, batchData)
+        prediction, scores = model.predict_step(batchMetaData, batchData)
 
         logger.debug("predictions in eval: {}".format(prediction))       
         batchTaskId = int(batchMetaData['task_id'])
+        
         orgLabels = batchMetaData['label']
         allLabels[batchTaskId].extend(orgLabels)
 
@@ -37,9 +34,7 @@ def evaluate(dataSet, batchSampler, dataLoader, taskParams,
         allPreds[batchTaskId].extend(prediction)
         allScores[batchTaskId].extend(scores)
         allIds[batchTaskId].extend(batchMetaData['uids'])
-        allLogitsSigmoid[batchTaskId].extend(_ouLogitsSigmoid)
-        allSequenceOutput[batchTaskId].extend(sequenceOutput)
-        
+
     for i in range(len(allPreds)):
         if allPreds[i] == []:
             continue
@@ -47,62 +42,44 @@ def evaluate(dataSet, batchSampler, dataLoader, taskParams,
         taskType = taskParams.taskTypeMap[taskName]
         labMap = taskParams.labelMap[taskName]
 
+
         if taskType == TaskType.NER:
-            # NER requires label clipping. We''ve already clipped our predictions
-            #using attn Masks, so we will clip labels to predictions len
-            # Also we need to remove the extra tokens from predictions based on labels
-            #print(labMap)
+        # NER requires label clipping. We''ve already clipped our predictions
+        #using attn Masks, so we will clip labels to predictions len
+        # Also we need to remove the extra tokens from predictions based on labels
+        #print(labMap)
             labMapRevN = {v:k for k,v in labMap.items()}
 
             for j, (p, l) in enumerate(zip(allPreds[i], allLabels[i])):
                 allLabels[i][j] = l[:len(p)]
                 allPreds[i][j] = [labMapRevN[int(ele)] for ele in p]
                 allLabels[i][j] = [labMapRevN[int(ele)] for ele in allLabels[i][j]]
-            
+            #allPreds[i] = [ [ labMapRev[int(p)] for p in pp ] for pp in allPreds[i] ]
+            #allLabels[i] = [ [labMapRev[int(l)] for l in ll] for ll in allLabels[i] ]
+
             newPreds = []
             newLabels = []
             newScores = []
-            newLogitsSigmoid = []
-            newSequenceOutput = []
-            newIndexSequenceOutput = []
             for m, samp in enumerate(allLabels[i]):
                 Preds = []
                 Labels = []
                 Scores = []
-                LogitsSigmoid = []
-                SeuqenceOutput = []
-                IndexSequenceOutput = []
-                
                 for n, ele in enumerate(samp):
+                    #print(ele)
                     if ele != '[CLS]' and ele != '[SEP]' and ele != 'X':
                         #print('inside')
                         Preds.append(allPreds[i][m][n])
                         Labels.append(ele)
                         Scores.append(allScores[i][m][n])
-                        LogitsSigmoid.append(allLogitsSigmoid[i][m][n])
-                        SeuqenceOutput.append(allSequenceOutput[i][m][n])
-                        IndexSequenceOutput.append(n)
-                        # get index of SequenceOutput and append it to IndexSequenceOutput 
                         #del allLabels[i][m][n]
                         #del allPreds[i][m][n]
                 newPreds.append(Preds)
                 newLabels.append(Labels)
                 newScores.append(Scores)
-                newLogitsSigmoid.append(LogitsSigmoid)
-                newSequenceOutput.append(SeuqenceOutput)
-                newIndexSequenceOutput.append(IndexSequenceOutput)
             
             allLabels[i] = newLabels
             allPreds[i] = newPreds
             allScores[i] = newScores
-            allLogitsSigmoid[i] = newLogitsSigmoid
-            allSequenceOutput[i] = newSequenceOutput
-            allIndexChangeSequenceOutput[i] = newIndexSequenceOutput
-            
-        if taskType == TaskType.SingleSenClassification and labMap is not None:
-            labMapRevC = {v:k for k,v in labMap.items()}
-            allPreds[i] = [labMapRevC[int(ele)] for ele in allPreds[i]]
-            allLabels[i] = [labMapRevC[int(ele)] for ele in allLabels[i]]
 
     if needMetrics:
         # fetch metrics from task id
@@ -118,8 +95,7 @@ def evaluate(dataSet, batchSampler, dataLoader, taskParams,
                 logger.info("********** {} Evaluation************\n".format(taskName))
                 for m in metrics:
                     metricVal = METRICS[m](allLabels[i], allPreds[i])
-                    # logger.info("{} : {}".format(m, metricVal))
-                    print("{} : {}".format(m, metricVal))
+                    logger.info("{} : {}".format(m, metricVal))
 
     if wrtPredPath is not None and wrtDir is not None:
         for i in range(len(allPreds)):
@@ -134,6 +110,6 @@ def evaluate(dataSet, batchSampler, dataLoader, taskParams,
             savePath = os.path.join(wrtDir, "{}_{}".format(taskName, wrtPredPath))
             df.to_csv(savePath, sep = "\t", index = False)
             #logger.info("Predictions File saved at {}".format(savePath))
+
     if returnPred:
-        return allIds, allPreds, allScores, allLogitsSigmoid, allSequenceOutput, allIndexChangeSequenceOutput
-    
+        return allIds, allPreds, allScores

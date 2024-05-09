@@ -12,6 +12,7 @@ class CustomDataset(Dataset):
             lines = f.readlines()
             for line in lines:
                 data_dict = json.loads(line)
+               
                 data_dict['token_id'] = json.loads(data_dict['token_id'])
                 data_dict['attention_mask'] = json.loads(data_dict['attention_mask'])
                 data_dict['token_type_ids'] = json.loads(data_dict['token_type_ids'])
@@ -23,6 +24,7 @@ class CustomDataset(Dataset):
     
     def __getitem__(self, idx):
         sample = self.data[idx]
+        
         token_id = torch.tensor(sample['token_id'], dtype=torch.long)
         attention_mask = torch.tensor(sample['attention_mask'], dtype=torch.long)
         token_type_ids = torch.tensor(sample['token_type_ids'], dtype=torch.long)

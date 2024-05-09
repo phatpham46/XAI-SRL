@@ -1,4 +1,5 @@
 
+import json
 import os
 import re
 import torch
@@ -156,7 +157,7 @@ def masking_sentence_word(words: list, input_ids: torch.tensor, offsets: list):
 
 def data_preprocessing(dataDir: str, wriDir: str):
     '''
-    data_preprocessing('./interim/', './mlm_output/')
+    data_preprocessing('./interim/', './mlm_output_4/')
     Function to create data in MLM format.
     Input file: csv with columns ['id', 'source ,'text', 'arguments']
     Output file: json with columns ['uid', 'token_id', 'mask', 'pos']
@@ -178,8 +179,8 @@ def data_preprocessing(dataDir: str, wriDir: str):
         print("Processing file: ", file)
     
         with tqdm(total=len(data['text'])) as pbar:
-            for sample in data['text']:    
-            
+            for id, sample in zip(data['id'], data['text']):    
+                
                 # Get word list from sample
                 word_lst = get_word_list(sample)
                 
@@ -197,8 +198,9 @@ def data_preprocessing(dataDir: str, wriDir: str):
                     assert len(mask[0]) == MAX_SEQ_LEN, "Mismatch between processed tokens and labels"
                     
                     feature = {
-                        'input_id': input_id[0].numpy().tolist(),
-                        'token_id': mask[0].numpy().tolist(), 
+                        'origin_uid': id,
+                        'origin_id': input_id[0].numpy().tolist(),
+                        'pertured_id': mask[0].numpy().tolist(), 
                         'attention_mask': tokenized_sentence['attention_mask'][0].numpy().tolist(),  
                         'token_type_ids': tokenized_sentence['token_type_ids'][0].numpy().tolist(),
                         'pos_tag_id': pos_tag_id[0].numpy().tolist()
@@ -208,51 +210,16 @@ def data_preprocessing(dataDir: str, wriDir: str):
                 
                 # Update the progress bar
                 pbar.update(1)
-            
-            
-        # Write to a CSV file
-        df_feature = pd.DataFrame(features)
-        #df_feature.to_csv(writeFile, index = False)
-        df_feature.to_json(writeFile.replace('csv', 'json'), orient='records', lines=True)
-           
-def data_split(dataDir: str, wriDir: str):
-    
-    '''
-    data_split('mlm_output', 'mlm_prepared_data')
-    Function to split data into train, dev, test (60, 20, 20) and merge to json files.
-    '''
-    check_data_dir(dataDir, auto_create=False)
-    check_data_dir(wriDir, auto_create=True)   
-    
-    files = get_files(dataDir)
-    train_df = pd.DataFrame()
-    dev_df = pd.DataFrame()
-    test_df = pd.DataFrame()
      
-    for file in files:
-       
-        data = pd.read_csv(os.path.join(dataDir, file))    
-        train, testt = train_test_split(data, test_size=0.4)
-        dev, test = train_test_split(testt, test_size=0.5)
+        with open(writeFile.replace('csv', 'json'), 'w') as wf:
+            for feature in features:
+                wf.write('{}\n'.format(json.dumps(feature))) 
+            
         
-        # concatenate the data
-        train_df = pd.concat([train_df, train], ignore_index=True)
-        dev_df = pd.concat([dev_df, dev], ignore_index=True)
-        test_df = pd.concat([test_df, test], ignore_index=True)
-        
-        print("Processing file: ", file)
-    
-    train_df.to_json(os.path.join(wriDir, 'train_mlm.json'), orient='records', lines=True)
-    dev_df.to_json(os.path.join(wriDir, 'dev_mlm.json'), orient='records', lines=True)
-    test_df.to_json(os.path.join(wriDir, 'test_mlm.json'), orient='records', lines=True)
-    
-    return train_df, dev_df, test_df
-          
 def main():
     
     data_preprocessing('./interim/', './mlm_output_4/')
     
-    # data_split('./mlm_output_3/', './mlm_prepared_data_3/')
     
 if __name__ == "__main__":
     main() 

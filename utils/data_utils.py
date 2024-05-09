@@ -23,6 +23,7 @@ TRANSFORM_FUNCS = {
     "bio_ner_to_tsv" : bio_ner_to_tsv,
     "get_embedding" : get_embedding,
     "get_embedding_finetuned" : get_embedding_finetuned,
+    "convert_csv_to_txt":convert_csv_to_txt
 }
 
 class ModelType(IntEnum):

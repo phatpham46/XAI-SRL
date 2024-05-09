@@ -6,7 +6,9 @@ import torch
 from statistics import median
 from models import model
 from transformers import BertModel
-
+import csv
+from MLM.mlm_utils.model_utils import NLP
+from MLM.mlm_utils.transform_func import get_word_list
 SEED = 42
 
 def bio_ner_to_tsv(dataDir, readFile, wrtDir, transParamDict, isTrainFile=False):
@@ -86,8 +88,49 @@ def bio_ner_to_tsv(dataDir, readFile, wrtDir, transParamDict, isTrainFile=False)
     print('Mean len of sentences: ', sum(senLens)/len(senLens))
     print('Median len of sentences: ', median(senLens))    
 
+def convert_csv_to_txt(dataDir, wrtDir, readFile, transParamDict, isTrainFile=False):
+    
+    csv_file = os.path.join(dataDir, readFile)
+    txt_file = os.path.join(wrtDir, 'conll_format_{}.txt'.format(readFile.split('.')[0]))
+    predicate = readFile.split('_')[0]
+    with open(csv_file, 'r', encoding='utf-8') as csvfile, open(txt_file, 'w', encoding='utf-8') as txtfile:
+        csvreader = csv.DictReader(csvfile)
+        for row in csvreader:
+           
+            text = row['text'].lower()
+          
+            arguments = [(key, get_word_list(value)) for key, value in eval(row['arguments'].lower()).items()]
+          
+            tokens = list(map(lambda x: x.lower(), get_word_list(text)))
 
+            arg_list = [None for _ in range(len(tokens))]
+            
+            idx_token = 0
 
+            while idx_token < len(tokens):
+                for tuple_arg in arguments:
+                    key, value = tuple_arg
+                    if predicate in ['begin', 'modify', 'catalyse','lose', 'lead'] and tokens[idx_token] in ['began', 'begun', 'modified', 'catalyze', 'catalyzing', 'catalysing', 'lost', 'led'] and arg_list[idx_token] is None:
+                        arg_list[idx_token] = 'B-V'
+                        
+                    if (predicate in tokens[idx_token] or predicate[:-1] in tokens[idx_token]) and arg_list[idx_token] is None:
+                        arg_list[idx_token] = 'B-V'
+                    if tokens[idx_token] in value[0] and arg_list[idx_token] is None:
+                        if tokens[idx_token:idx_token+len(value)] == value:
+                          arg_list[idx_token] = 'B-A' + key
+                          arg_list[idx_token + 1: idx_token + len(value)] = ['I-A' + key] * (len(value) - 1)
+                         
+                          idx_token += len(value) - 1
+                          break
+                idx_token += 1
+               
+            result_list = [item if item is not None else 'O' for item in arg_list]
+            
+            for token, arg in zip(tokens, result_list):
+                txtfile.write(token + ' B-O ' + arg + '\n')
+
+            txtfile.write('\n')
+    print("Done file", readFile)
 def coNLL_ner_pos_to_tsv(dataDir, readFile, wrtDir, transParamDict, isTrainFile=False):
     
     """

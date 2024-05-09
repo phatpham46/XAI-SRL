@@ -85,6 +85,7 @@ def create_data_ner(data, chunkNumber, tempList, maxSeqLen, tokenizer, labelMap)
                 if 'attention_mask' in out.keys():
                     inputMask = out['attention_mask']
 
+                # doi voi SRL data
                 tempLabelsEnc = pad_sequences([ [labelMap[l] for l in tempLabels] ], 
                                     maxlen=maxSeqLen, value=labelMap["O"], padding="post",
                                     dtype="long", truncating="post").tolist()[0]
@@ -114,6 +115,7 @@ def create_data_multithreaded(data, wrtPath, tokenizer, taskObj, taskName, maxSe
     
     if multithreaded:
         numProcess = mp.cpu_count() - 1
+        # numProcess = 1
 
     '''
     Dividing the entire data into chunks which can be sent to different processes.
