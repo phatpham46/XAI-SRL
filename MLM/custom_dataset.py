@@ -38,7 +38,7 @@ class CustomDataset(Dataset):
         else:
             return SequentialSampler(self.data)
         
-    def generate_batches(self, local_rank, batch_size, dataset,
+    def generate_batches(self, sampler, batch_size, dataset,
         drop_last=True):
         """
         A generator function which wraps the PyTorch DataLoader. It will
@@ -47,7 +47,7 @@ class CustomDataset(Dataset):
        
         dataloader = DataLoader(
             dataset= dataset, 
-            sampler= self._get_sampler(local_rank),
+            sampler= sampler,
             batch_size=batch_size,
             drop_last=drop_last,
             num_workers=NUM_CPU)  

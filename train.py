@@ -15,11 +15,11 @@ from torch.utils.tensorboard import SummaryWriter
 from utils.task_utils import TasksParam   
 from utils.data_utils import METRICS, TaskType
 
-from models.data_manager import allTasksDataset, Batcher, batchUtils
+from SRL.data_manager import allTasksDataset, Batcher, batchUtils
 from torch.utils.data import Dataset, DataLoader, BatchSampler
 from logger_ import make_logger
-from models.model import multiTaskModel
-from models.eval import evaluate
+from SRL.model import multiTaskModel
+from SRL.eval import evaluate
 TF_ENABLE_ONEDNN_OPTS=0
 
 def make_arguments(parser):

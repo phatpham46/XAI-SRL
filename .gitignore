@@ -10,16 +10,6 @@ word_vecs_output/
 data/
 logs/
 logs_tb/
-MLM/coNLL_tsv_v2/  
-MLM/coNLL_txt/
-MLM/coNLL_tsv_json/
-MLM/interim/
-MLM/list_content_word/
-MLM/runs/
-MLM/mlm_output/
-MLM/word_present_each_file/
-MLM/raw/
-MLM/pertured_data/
-MLM/masked_data_text
+MLM/data_mlm/
 
 

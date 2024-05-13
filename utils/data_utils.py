@@ -6,7 +6,7 @@ from transformers import AlbertConfig, AlbertModel, AlbertTokenizer
 from transformers import RobertaConfig, RobertaModel, RobertaTokenizer
 from transformers import XLNetConfig, XLNetModel, XLNetTokenizer
 from transformers import ElectraConfig, ElectraModel, ElectraTokenizer
-from models.loss import *
+from SRL.loss import *
 from utils.tranform_functions import *
 from utils.eval_metrics import *
 

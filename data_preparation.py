@@ -74,8 +74,9 @@ def create_data_ner(data, chunkNumber, tempList, maxSeqLen, tokenizer, labelMap)
                 tempTokens.append('[SEP]')
                 tempLabels.append('[SEP]')
                 out = tokenizer.encode_plus(text = tempTokens, add_special_tokens=False,
-                                        truncation_strategy ='only_first',
-                                        max_length = maxSeqLen, pad_to_max_length=True)
+                                        padding='max_length', 
+                                        truncation=True,
+                                        max_length = maxSeqLen)
                 # print("len vocab: ", len(tokenizer.get_vocab()))  #30522 
                 typeIds = None
                 inputMask = None
@@ -89,7 +90,7 @@ def create_data_ner(data, chunkNumber, tempList, maxSeqLen, tokenizer, labelMap)
                 tempLabelsEnc = pad_sequences([ [labelMap[l] for l in tempLabels] ], 
                                     maxlen=maxSeqLen, value=labelMap["O"], padding="post",
                                     dtype="long", truncating="post").tolist()[0]
-                
+               
                 assert len(tempLabelsEnc) == len(tokenIds), "mismatch between processed tokens and labels"
                 features = {
                 'uid': ids,
@@ -114,8 +115,8 @@ def create_data_multithreaded(data, wrtPath, tokenizer, taskObj, taskName, maxSe
     tempFilesList = man.list()
     
     if multithreaded:
-        numProcess = mp.cpu_count() - 1
-        # numProcess = 1
+        # numProcess = mp.cpu_count() - 1
+        numProcess = 1
 
     '''
     Dividing the entire data into chunks which can be sent to different processes.
@@ -194,6 +195,8 @@ def main():
             create_data_multithreaded(rows, wrtFile, tokenizer, tasks, taskName,
                                     args.max_seq_len, args.multithreaded)
             print('Data Processing done for {}. File saved at {}'.format(taskName, wrtFile))
+           
+            
             
 if __name__ == "__main__":
     main()

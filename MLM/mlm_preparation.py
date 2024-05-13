@@ -157,7 +157,7 @@ def masking_sentence_word(words: list, input_ids: torch.tensor, offsets: list):
 
 def data_preprocessing(dataDir: str, wriDir: str):
     '''
-    data_preprocessing('./interim/', './mlm_output_4/')
+    data_preprocessing('./interim/', './mlm_output/')
     Function to create data in MLM format.
     Input file: csv with columns ['id', 'source ,'text', 'arguments']
     Output file: json with columns ['uid', 'token_id', 'mask', 'pos']
@@ -218,7 +218,7 @@ def data_preprocessing(dataDir: str, wriDir: str):
         
 def main():
     
-    data_preprocessing('./interim/', './mlm_output_4/')
+    data_preprocessing('./data_mlm/raw_folder/interim/', './data_mlm/process_folder/mlm_output/')
     
     
 if __name__ == "__main__":

@@ -4,7 +4,7 @@ import json
 import pickle
 import torch
 from statistics import median
-from models import model
+from SRL import model
 from transformers import BertModel
 import csv
 from MLM.mlm_utils.model_utils import NLP
