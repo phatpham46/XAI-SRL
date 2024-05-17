@@ -168,7 +168,6 @@ def data_preprocessing(dataDir: str, wriDir: str):
     check_data_dir(dataDir, auto_create=False)
     check_data_dir(wriDir, auto_create=True)
     
-    
     files = get_files(dataDir)
     for file in files:
         
@@ -219,7 +218,6 @@ def data_preprocessing(dataDir: str, wriDir: str):
 def main():
     
     data_preprocessing('./data_mlm/raw_folder/interim/', './data_mlm/process_folder/mlm_output/')
-    
     
 if __name__ == "__main__":
     main() 

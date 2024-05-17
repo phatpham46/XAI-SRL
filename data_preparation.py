@@ -65,11 +65,13 @@ def create_data_ner(data, chunkNumber, tempList, maxSeqLen, tokenizer, labelMap)
                     tokens = tokenizer.tokenize(word)
                     for m, token in enumerate(tokens):
                         tempTokens.append(token)
-                        #only first piece would be marked with label
-                        if m==0:
-                            tempLabels.append(label)
-                        else: 
-                            tempLabels.append('X')
+                        # #only first piece would be marked with label
+                        # if m==0:
+                        #     tempLabels.append(label)
+                        # else: 
+                        #     tempLabels.append('X')
+                        # temp label will append the same label for all the pieces of a word
+                        tempLabels.append(label)
                 # adding [SEP] at end
                 tempTokens.append('[SEP]')
                 tempLabels.append('[SEP]')
@@ -157,7 +159,7 @@ def main():
     parser.add_argument('--task_file', type=str, default="tasks_file.yml")
     parser.add_argument('--data_dir', type=str, default='data')
     parser.add_argument('--do_lower_case', type=bool, default=True)
-    parser.add_argument('--max_seq_len', type=int, default = 128,
+    parser.add_argument('--max_seq_len', type=int, default = 85,
                         help = "max sequence length for making data for model")
     parser.add_argument('--has_labels', type=bool, default=True,
                         help = "If labels are not present in file then False. \
@@ -181,7 +183,8 @@ def main():
     #making tokenizer for model
     tokenizer = tokenizerClass.from_pretrained(configName)
     print('{} model tokenizer loaded for config {}'.format(modelName, configName))
-    dataPath = os.path.join(args.data_dir, '{}_prepared_data'.format(configName))
+    # dataPath = os.path.join(args.data_dir, '{}_prepared_data'.format(configName))
+    dataPath = os.path.join(args.data_dir, 'modify_label_prepared_data')
     if not os.path.exists(dataPath):
         os.makedirs(dataPath)
 

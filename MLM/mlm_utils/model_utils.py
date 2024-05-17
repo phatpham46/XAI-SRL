@@ -7,7 +7,7 @@ MLM_IGNORE_LABEL_IDX = -1
 VOCAB_SIZE = 28996 
 BATCH_SIZE = 32
 
-MAX_SEQ_LEN = 128
+MAX_SEQ_LEN = 85
 BERT_PRETRAIN_MODEL = "dmis-lab/biobert-base-cased-v1.2"
 TOKENIZER = BertTokenizerFast.from_pretrained(BERT_PRETRAIN_MODEL, do_lower_case=True)
 

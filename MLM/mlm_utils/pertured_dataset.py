@@ -5,11 +5,11 @@ from torch.utils.data import Dataset, DataLoader, SequentialSampler
 
 class PerturedDataset(Dataset):
     
-    def __init__(self, data_path, file_name, device):
+    def __init__(self, file_name, device):
         self.device = device
       
         self.data = []
-        with open(data_path / file_name, 'r') as file:
+        with open( file_name, 'r') as file:
             for i, line in enumerate(file):
                 sample = json.loads(line)
                 self.data.append(sample)
@@ -19,13 +19,14 @@ class PerturedDataset(Dataset):
     
     def __getitem__(self, idx):
         sample = self.data[idx]
-        if 'uid' in sample: 
-            uid = sample['uid']
+        if 'label' in sample: 
+            origin_uid = sample['origin_uid']
             origin_id = torch.tensor(sample['origin_id'], dtype=torch.long)
+            label = torch.tensor(sample['label'], dtype=torch.long)
             token_id = torch.tensor(sample['token_id'], dtype=torch.long)
             type_id = torch.tensor(sample['type_id'], dtype=torch.long)
             mask = torch.tensor(sample['mask'], dtype=torch.long)
-            return uid, origin_id, token_id, type_id, mask
+            return origin_uid, origin_id, label, token_id, type_id, mask
         else:
             origin_uid = sample['origin_uid'] 
             origin_id = torch.tensor(sample['origin_id'], dtype=torch.long)

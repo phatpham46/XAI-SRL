@@ -1,11 +1,6 @@
 from enum import IntEnum
 
 from transformers import BertConfig, BertModel, BertTokenizer
-from transformers import DistilBertConfig, DistilBertModel, DistilBertTokenizer
-from transformers import AlbertConfig, AlbertModel, AlbertTokenizer
-from transformers import RobertaConfig, RobertaModel, RobertaTokenizer
-from transformers import XLNetConfig, XLNetModel, XLNetTokenizer
-from transformers import ElectraConfig, ElectraModel, ElectraTokenizer
 from SRL.loss import *
 from utils.tranform_functions import *
 from utils.eval_metrics import *
