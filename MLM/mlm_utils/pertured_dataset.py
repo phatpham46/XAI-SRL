@@ -1,6 +1,6 @@
 import json
 import torch
-from mlm_utils.model_utils import NUM_CPU
+from MLM.mlm_utils.model_utils import NUM_CPU
 from torch.utils.data import Dataset, DataLoader, SequentialSampler
 
 class PerturedDataset(Dataset):
@@ -30,11 +30,10 @@ class PerturedDataset(Dataset):
         else:
             origin_uid = sample['origin_uid'] 
             origin_id = torch.tensor(sample['origin_id'], dtype=torch.long)
-            pertured_id = torch.tensor(sample['pertured_id'], dtype=torch.long)
             attention_mask = torch.tensor(sample['attention_mask'], dtype=torch.long)
             token_type_ids = torch.tensor(sample['token_type_ids'], dtype=torch.long)
             pos_tag_id = torch.tensor(sample['pos_tag_id'], dtype=torch.long)
-            return origin_uid, origin_id, pertured_id, attention_mask, token_type_ids, pos_tag_id
+            return origin_uid, origin_id, attention_mask, token_type_ids, pos_tag_id
     
     
     def generate_batches(self, dataset, batch_size,

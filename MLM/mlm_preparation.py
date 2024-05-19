@@ -122,7 +122,6 @@ def masking_sentence_word(words: list, input_ids: torch.tensor, offsets: list):
         words = ['The', 'capital', 'of', 'France', 'is', 'Paris', '.']
         input_ids: [tensor([  101,  1103, 175, 10555,  1110,   1113,   119,   102])]
     Output: 
-        masked_id_sentences: [tensor([  101,  1103, 175, 10555,  103,   103,   103,   102])]
         pos_tag_id: [0, 0, 0, 0, 1, 1, 1, 0] (1: noun, 2: verb, ..)
     '''
     # get a list of token for the word
@@ -130,8 +129,7 @@ def masking_sentence_word(words: list, input_ids: torch.tensor, offsets: list):
     
     # create a list of masked sentence from one input id
     pos_tag_id = []
-    masked_id_sentences = []
-  
+    
     for (key, value) in word_dict.items():
         masked_ids = input_ids.clone() 
         origin_sample = decode_token(masked_ids[0], skip_special_tokens=True)
@@ -150,10 +148,9 @@ def masking_sentence_word(words: list, input_ids: torch.tensor, offsets: list):
                         if mask == 1:
                             label[0][idx] = pos_tag_mapping(get_pos_tag_word(key, origin_sample).get(key))
                             
-                    masked_id_sentences.append(masked_id)
                     pos_tag_id.append(label)
     
-    return input_ids, masked_id_sentences, pos_tag_id
+    return input_ids, pos_tag_id
 
 def data_preprocessing(dataDir: str, wriDir: str):
     '''
@@ -187,19 +184,17 @@ def data_preprocessing(dataDir: str, wriDir: str):
                 tokenized_sentence = encode_text(' '.join(word_lst))
                 
                 # Mask the content words
-                input_id, masked_sens, pos_tag_ids = masking_sentence_word(
+                input_id, pos_tag_ids = masking_sentence_word(
                     word_lst, 
                     tokenized_sentence['input_ids'], 
                     tokenized_sentence['offset_mapping'][0]
                     )
                 # Create a feature for each masked sentence
-                for mask, pos_tag_id in zip(masked_sens, pos_tag_ids):
-                    assert len(mask[0]) == MAX_SEQ_LEN, "Mismatch between processed tokens and labels"
+                for pos_tag_id in pos_tag_ids:
                     
                     feature = {
                         'origin_uid': id,
                         'origin_id': input_id[0].numpy().tolist(),
-                        'pertured_id': mask[0].numpy().tolist(), 
                         'attention_mask': tokenized_sentence['attention_mask'][0].numpy().tolist(),  
                         'token_type_ids': tokenized_sentence['token_type_ids'][0].numpy().tolist(),
                         'pos_tag_id': pos_tag_id[0].numpy().tolist()

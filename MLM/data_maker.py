@@ -67,10 +67,10 @@ class DataMaker():
             if is_masked: # file masked_data_json
                 origin_uid, origin_id, _, token_id, type_id, mask = batch
             else: # file mlm_output
-                origin_uid, token_id, mask_id, mask, type_id, pos_tag_id = batch 
+                origin_uid, token_id, mask, type_id, pos_tag_id = batch 
             with torch.no_grad():
                 _, logits = self.model.network(token_id, type_id, mask, 0, 'conllsrl')
-            
+
                 outLogitsSoftmax = nn.functional.softmax(logits, dim = 2).data.cpu().numpy()
                 
                 outLogitsSigmoid = nn.functional.sigmoid(logits).data.cpu().numpy()
