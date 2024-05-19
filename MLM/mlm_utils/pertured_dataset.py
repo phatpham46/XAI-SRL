@@ -37,7 +37,7 @@ class PerturedDataset(Dataset):
             return origin_uid, origin_id, pertured_id, attention_mask, token_type_ids, pos_tag_id
     
     
-    def generate_batches(self, batch_size, dataset,
+    def generate_batches(self, dataset, batch_size,
         drop_last=True):
         """
         A generator function which wraps the PyTorch DataLoader. It will
