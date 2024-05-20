@@ -11,5 +11,7 @@ data/
 logs/
 logs_tb/
 MLM/data_mlm/
+content_word_csv/
+list_content_word_v3/
 
 
