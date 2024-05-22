@@ -39,8 +39,9 @@ def processing_data(labels, predictions):
 
 
 def main():
-    dirPath = "./output_SRL_finetuned"
+    dirPath = "/kaggle/working/output_srl_model/"
     files = []
+    print(1111)
     for path in os.listdir(dirPath):
         if os.path.isfile(os.path.join(dirPath, path)):
             files.append(path)

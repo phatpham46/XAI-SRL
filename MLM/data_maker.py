@@ -2,8 +2,6 @@
 import numpy as np
 import sys
 sys.path.append('../')
-from SRL.model import multiTaskModel
-from utils.data_utils import NLP_MODELS
 from data_preparation import * 
 from mlm_utils.pertured_dataset import PerturedDataset
 import torch.nn as nn
@@ -12,48 +10,20 @@ import os
 import torch
 
 class DataMaker():
-    def __init__(self, data_file, out_dir, saved_model_path, eval_batch_size=32, max_seq_len=85, seed=42):
+    def __init__(self, data_file, out_dir, eval_batch_size=32, max_seq_len=85, seed=42):
         self.data_file = data_file
         self.out_dir = out_dir
-        self.saved_model_path = saved_model_path
         self.eval_batch_size = eval_batch_size
         self.max_seq_len = max_seq_len
         self.seed = seed
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        assert os.path.exists(self.saved_model_path), "saved model not present at {}".format(self.saved_model_path)
         assert os.path.exists(self.data_file), "prediction tsv file not present at {}".format(self.data_file)
         
         self.dataset = PerturedDataset(self.data_file, self.device)
         self.dataloader = self.dataset.generate_batches(self.dataset, self.eval_batch_size)
-        loadedDict = torch.load(self.saved_model_path, map_location=self.device)
-        self.taskParamsModel = loadedDict['task_params']
-        
-        modelName = self.taskParamsModel.modelType.name.lower()
-        print("Model Name: ", modelName)
-        _, _ , tokenizerClass, defaultName = NLP_MODELS[modelName]
-        self.configName = self.taskParamsModel.modelConfig
-        if self.configName is None:
-            self.configName = defaultName
-        
-        self.tokenizer = tokenizerClass.from_pretrained(self.configName)
-        
-        allParams = {
-            'task_params': self.taskParamsModel,
-            'gpu': torch.cuda.is_available(),
-            'num_train_steps': 10,
-            'warmup_steps': 0,
-            'learning_rate': 2e-5,
-            'epsilon': 1e-8
-        }
-        
-        
-        self.model = multiTaskModel(allParams)
-        self.model.load_multi_task_model(loadedDict)
-        
-    
-    
-    def get_predictions(self, is_masked=False):
-        self.model.network.eval()
+       
+    def get_predictions(self, model, is_masked=False):
+        model.network.eval()
         
         allPreds = []
         allScores = []
@@ -64,26 +34,31 @@ class DataMaker():
         for batch in tqdm(self.dataloader, total = len(self.dataloader)):
             batch = tuple(t.to(self.device) if isinstance(t, torch.Tensor) else t for t in batch)
 
-            if is_masked: # file masked_data_json
-                origin_uid, origin_id, _, token_id, type_id, mask = batch
-            else: # file mlm_output
-                origin_uid, token_id, mask, type_id, pos_tag_id = batch 
+            if is_masked: 
+                origin_uid, token_id, mask, type_id, pos_tag_id = batch
+                # create a dummy label tensor
+                label = torch.zeros(token_id.size(0), token_id.size(1), dtype=torch.long).to(self.device)
+            else: 
+                origin_uid, label, token_id, type_id, mask = batch 
+            
             with torch.no_grad():
-                _, logits = self.model.network(token_id, type_id, mask, 0, 'conllsrl')
+                _, logits = model.network(token_id, type_id, mask, 0, 'conllsrl')
 
+               
                 outLogitsSoftmax = nn.functional.softmax(logits, dim = 2).data.cpu().numpy()
                 
                 outLogitsSigmoid = nn.functional.sigmoid(logits).data.cpu().numpy()
                 
                 predicted_sm = np.argmax(outLogitsSoftmax, axis = 2)
                 
-            
+
                 # here in score, we only want to give out the score of the class of tag, which is maximum
                 predScore = np.max(outLogitsSigmoid, axis = 2).tolist() 
                 
                 predicted_sm = predicted_sm.tolist()
-            
+                
                 # get the attention masks, we need to discard the predictions made for extra padding
+                
                 predictedTags = []
                 predScoreTags = []
                 
@@ -102,13 +77,69 @@ class DataMaker():
                 allPreds.append(predictedTags)  
                 allScores.append(predScoreTags)  
                 allLogitsSoftmax.append(outLogitsSoftmax)
-                # allLabels.append(label.tolist())
+                allLabels.append(label.tolist())
                 allLogitsRaw.append(logits.data.cpu().numpy())
                 allOriginUIDs.append(origin_uid)
+            break
+
+        labMapRevN = {0: 'B-A1',
+                        1: 'I-A1',
+                        2: 'O',
+                        3: 'B-V',
+                        4: 'B-A0',
+                        5: 'I-A0',
+                        6: 'B-A4',
+                        7: 'I-A4',
+                        8: 'I-A3',
+                        9: 'B-A2',
+                        10: 'I-A2',
+                        11: 'B-A3',
+                        12: '[CLS]',
+                        13: '[SEP]',
+                        14: 'X'}
+
+        print("allPreds: ", len(allPreds), len(allPreds[0]))
+        
+        for j, (p, l) in enumerate(zip(allPreds, allLabels)):
+            allLabels[j] = l[:len(p)]
+            allPreds[j] = [labMapRevN[int(ele)] for ele in p]
+            allLabels[j] = [labMapRevN[int(ele)] for ele in allLabels[j]]
+        #allPreds[i] = [ [ labMapRev[int(p)] for p in pp ] for pp in allPreds[i] ]
+        #allLabels[i] = [ [labMapRev[int(l)] for l in ll] for ll in allLabels[i] ]
+
+        newPreds = []
+        newLabels = []
+        newScores = []
+        newLogitsSoftmax = []
+        for m, samp in enumerate(allLabels):
+            Preds = []
+            Labels = []
+            Scores = []
+            LogitsSm = []
+            for n, ele in enumerate(samp):
+                #print(ele)
+                if ele != '[CLS]' and ele != '[SEP]' and ele != 'X':
+                    #print('inside')
+                    Preds.append(allPreds[m][n])
+                    Labels.append(ele)
+                    Scores.append(allScores[m][n])
+                    LogitsSm.append(allLogitsSoftmax[m][n])
+                    #del allLabels[i][m][n]
+                    #del allPreds[i][m][n]
+            newPreds.append(Preds)
+            newLabels.append(Labels)
+            newScores.append(Scores)
+            newLogitsSoftmax.append(LogitsSm)
+        allLabels = newLabels
+        allPreds = newPreds
+        allScores = newScores    
+        allLogitsSoftmax = newLogitsSoftmax        
+                
         # flatten allPreds, allScores
         allOriginUIDs = [item for sublist in allOriginUIDs for item in sublist]
         allPreds = [item for sublist in allPreds for item in sublist]
         allScores = [item for sublist in allScores for item in sublist]
         allLogitsSoftmax = [item for sublist in allLogitsSoftmax for item in sublist]
         allLogitsRaw = [item for sublist in allLogitsRaw for item in sublist]
-        return allOriginUIDs, allPreds, allScores, allLogitsSoftmax, allLogitsRaw     
+        allLabels = [item for sublist in allLabels for item in sublist]
+        return allOriginUIDs, allPreds, allScores, allLogitsSoftmax, allLogitsRaw, allLabels    
