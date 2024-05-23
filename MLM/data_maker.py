@@ -22,7 +22,7 @@ class DataMaker():
         self.dataset = PerturedDataset(self.data_file, self.device)
         self.dataloader = self.dataset.generate_batches(self.dataset, self.eval_batch_size)
        
-    def get_predictions(self, model, is_masked=False):
+    def get_predictions(self, model):
         model.network.eval()
         
         allPreds = []
@@ -34,12 +34,7 @@ class DataMaker():
         for batch in tqdm(self.dataloader, total = len(self.dataloader)):
             batch = tuple(t.to(self.device) if isinstance(t, torch.Tensor) else t for t in batch)
 
-            if is_masked: 
-                origin_uid, token_id, mask, type_id, pos_tag_id = batch
-                # create a dummy label tensor
-                label = torch.zeros(token_id.size(0), token_id.size(1), dtype=torch.long).to(self.device)
-            else: 
-                origin_uid, label, token_id, type_id, mask = batch 
+            origin_uid, token_id, type_id, mask, label, pos_tag_id = batch
             
             with torch.no_grad():
                 _, logits = model.network(token_id, type_id, mask, 0, 'conllsrl')

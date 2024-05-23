@@ -131,6 +131,7 @@ def convert_csv_to_txt(dataDir, wrtDir, readFile, transParamDict, isTrainFile=Fa
 
             txtfile.write('\n')
     print("Done file", readFile)
+
 def coNLL_ner_pos_to_tsv(dataDir, readFile, wrtDir, transParamDict, isTrainFile=False):
     
     """
@@ -227,14 +228,13 @@ def coNLL_ner_pos_to_tsv(dataDir, readFile, wrtDir, transParamDict, isTrainFile=
 
 bertmodel = BertModel.from_pretrained('dmis-lab/biobert-base-cased-v1.2', output_hidden_states =True)
 
+
+
 def read_data(readPath):
 
     with open(readPath, 'r', encoding = 'utf-8') as file:
-        taskData = []
-        for i, line in enumerate(file):
-            sample = json.loads(line)
-            taskData.append(sample)
-            
+        taskData = list(map(json.loads, file))
+          
     return taskData
 
 

@@ -116,6 +116,38 @@ def make_data_handlers(taskParams, mode, isTrain, gpu):
     dev file is at 1st index
     test file at 2nd index
     '''
+    # modePosMap = {"train" : 0, "dev" : 1, "test" : 2, 
+    #                         "abolish_dev" : 3, "abolish_test" : 4, 
+    #                         "alter_dev" : 5, "alter_test" : 6,
+    #                         "begin_dev" : 7, "begin_test" : 8,
+    #                         "block_dev" : 9, "block_test" : 10,
+    #                         "catalyse_dev" : 11, "catalyse_test" : 12,
+    #                         "confer_dev" : 13, "confer_test" : 14,
+    #                         "decrease_dev" : 15, "decrease_test" : 16,
+    #                         "delete_dev" : 17, "delete_test" : 18,
+    #                         "develop_dev" : 19, "develop_test" : 20,
+    #                         "disrupt_dev" : 21, "disrupt_test" : 22,
+    #                         "eliminate_dev" : 23, "eliminate_test" : 24,
+    #                         "encode_dev" : 25, "encode_test" : 26,
+    #                         "express_dev" : 27, "express_test" : 28,
+    #                         "generate_dev" : 29, "generate_test" : 30,
+    #                         "inhibit_dev" : 31, "inhibit_test" : 32,
+    #                         "initiate_dev" : 33, "initiate_test" : 34,
+    #                         "lead_dev" : 35, "lead_test" : 36,
+    #                         "lose_dev" : 37, "lose_test" : 38,
+    #                         "modify_dev" : 39, "modify_test" : 40,
+    #                         "mutate_dev" : 41, "mutate_test" : 42,
+    #                         "proliferate_dev" : 43, "proliferate_test" : 44,
+    #                         "recognize_dev" : 45, "recognize_test" : 46,
+    #                         "result_dev" : 47, "result_test" : 48,
+    #                         "skip_dev" : 49, "skip_test" : 50,
+    #                         "splice_dev" : 51, "splice_test" : 52,
+    #                         "transcribe_dev" : 53, "transcribe_test" : 54,
+    #                         "transform_dev" : 55, "transform_test" : 56,
+    #                         "translate_dev" : 57, "translate_test" : 58,
+    #                         "truncate_dev" : 59, "truncate_test" : 60  
+    #                         }
+    
     modePosMap = {"train" : 0, "dev" : 1, "test" : 2, 
                             "abolish_dev" : 3, "abolish_test" : 4, 
                             "alter_dev" : 5, "alter_test" : 6,
@@ -145,7 +177,13 @@ def make_data_handlers(taskParams, mode, isTrain, gpu):
                             "transcribe_dev" : 53, "transcribe_test" : 54,
                             "transform_dev" : 55, "transform_test" : 56,
                             "translate_dev" : 57, "translate_test" : 58,
-                            "truncate_dev" : 59, "truncate_test" : 60  
+                            "truncate_dev" : 59, "truncate_test" : 60,
+                            "begin2_dev" : 61, "begin2_test" : 62,
+                            "decrease2_dev" : 63, "decrease2_test" : 64,
+                            "splice2_dev" : 65, "splice2_test" : 66,
+                            "transform2_dev" : 67, "transform2_test" : 68,
+                            "translate2_dev" : 69, "translate2_test" : 70,
+                            "translate3_dev" : 71, "translate3_test" : 72,
                             }
     modeIdx = modePosMap[mode]
     allTaskslist = []
@@ -281,6 +319,17 @@ def main():
     allDataBegin_test, BatchSamplerBegin_test, multiTaskDataLoaderBegin_test = make_data_handlers(taskParams,
                                                                                 "begin_test", isTrain=False,
                                                                                 gpu=allParams['gpu'])
+    
+    #Begin 2 7 8
+    logger.info("Creating data handlers for Begin 2 dev...")
+    allDataBegin2_dev, BatchSamplerBegin2_dev, multiTaskDataLoaderBegin2_dev = make_data_handlers(taskParams,
+                                                                                "begin2_dev", isTrain=False,
+                                                                               gpu=allParams['gpu'])
+    logger.info("Creating data handlers for Begin 2 test...")
+    allDataBegin2_test, BatchSamplerBegin2_test, multiTaskDataLoaderBegin2_test = make_data_handlers(taskParams,
+                                                                                "begin2_test", isTrain=False,
+                                                                                gpu=allParams['gpu'])
+    
     #Block 9 10
     logger.info("Creating data handlers for Block dev...")
     allDataBlock_dev, BatchSamplerBlock_dev, multiTaskDataLoaderBlock_dev = make_data_handlers(taskParams,
@@ -318,6 +367,15 @@ def main():
     logger.info("Creating data handlers for Decrease test...")
     allDataDecrease_test, BatchSamplerDecrease_test, multiTaskDataLoaderDecrease_test = make_data_handlers(taskParams,
                                                                                 "decrease_test", isTrain=False,
+                                                                                gpu=allParams['gpu'])
+    
+    logger.info("Creating data handlers for Decrease 2 dev...")
+    allDataDecrease2_dev, BatchSamplerDecrease2_dev, multiTaskDataLoaderDecrease2_dev = make_data_handlers(taskParams,
+                                                                                "decrease2_dev", isTrain=False,
+                                                                               gpu=allParams['gpu'])
+    logger.info("Creating data handlers for Decrease 2 test...")
+    allDataDecrease2_test, BatchSamplerDecrease2_test, multiTaskDataLoaderDecrease2_test = make_data_handlers(taskParams,
+                                                                                "decrease2_test", isTrain=False,
                                                                                 gpu=allParams['gpu'])
 
     #Delete 17 18
@@ -421,11 +479,11 @@ def main():
                                                                                 gpu=allParams['gpu'])      
 
     #Lose 37 38
-    logger.info("Creating data handlers for Lead dev...")
+    logger.info("Creating data handlers for Lose dev...")
     allDataLose_dev, BatchSamplerLose_dev, multiTaskDataLoaderLose_dev = make_data_handlers(taskParams,
                                                                                 "lose_dev", isTrain=False,
                                                                                gpu=allParams['gpu'])
-    logger.info("Creating data handlers for Lead test...")
+    logger.info("Creating data handlers for Lose test...")
     allDataLose_test, BatchSamplerLose_test, multiTaskDataLoaderLose_test = make_data_handlers(taskParams,
                                                                                 "lose_test", isTrain=False,
                                                                                 gpu=allParams['gpu'])  
@@ -499,6 +557,14 @@ def main():
     allDataSplice_test, BatchSamplerSplice_test, multiTaskDataLoaderSplice_test = make_data_handlers(taskParams,
                                                                                 "splice_test", isTrain=False,
                                                                                 gpu=allParams['gpu']) 
+    logger.info("Creating data handlers for Splice 2 dev...")
+    allDataSplice2_dev, BatchSamplerSplice2_dev, multiTaskDataLoaderSplice2_dev = make_data_handlers(taskParams,
+                                                                                "splice2_dev", isTrain=False,
+                                                                               gpu=allParams['gpu'])
+    logger.info("Creating data handlers for Splice 2 test...")
+    allDataSplice2_test, BatchSamplerSplice2_test, multiTaskDataLoaderSplice2_test = make_data_handlers(taskParams,
+                                                                                "splice2_test", isTrain=False,
+                                                                                gpu=allParams['gpu']) 
 
     #Transcribe 53 54
     logger.info("Creating data handlers for Transcribe dev...")
@@ -519,6 +585,15 @@ def main():
     allDataTransform_test, BatchSamplerTransform_test, multiTaskDataLoaderTransform_test = make_data_handlers(taskParams,
                                                                                 "transform_test", isTrain=False,
                                                                                 gpu=allParams['gpu']) 
+    
+    logger.info("Creating data handlers for Transform 2 dev...")
+    allDataTransform2_dev, BatchSamplerTransform2_dev, multiTaskDataLoaderTransform2_dev = make_data_handlers(taskParams,
+                                                                                "transform2_dev", isTrain=False,
+                                                                               gpu=allParams['gpu'])
+    logger.info("Creating data handlers for Transform 2 test...")
+    allDataTransform2_test, BatchSamplerTransform2_test, multiTaskDataLoaderTransform2_test = make_data_handlers(taskParams,
+                                                                                "transform2_test", isTrain=False,
+                                                                                gpu=allParams['gpu'])
 
     #Translate 57 58
     logger.info("Creating data handlers for Translate dev...")
@@ -528,7 +603,24 @@ def main():
     logger.info("Creating data handlers for Translate test...")
     allDataTranslate_test, BatchSamplerTranslate_test, multiTaskDataLoaderTranslate_test = make_data_handlers(taskParams,
                                                                                 "translate_test", isTrain=False,
-                                                                                gpu=allParams['gpu'])                                                                             
+                                                                                gpu=allParams['gpu'])    
+    
+    logger.info("Creating data handlers for Translate 2 dev...")
+    allDataTranslate2_dev, BatchSamplerTranslate2_dev, multiTaskDataLoaderTranslate2_dev = make_data_handlers(taskParams,
+                                                                                "translate2_dev", isTrain=False,
+                                                                               gpu=allParams['gpu'])
+    logger.info("Creating data handlers for Translate 2 test...")
+    allDataTranslate2_test, BatchSamplerTranslate2_test, multiTaskDataLoaderTranslate2_test = make_data_handlers(taskParams,
+                                                                                "translate2_test", isTrain=False,
+                                                                                gpu=allParams['gpu'])                            
+    logger.info("Creating data handlers for Translate 3 dev...")
+    allDataTranslate3_dev, BatchSamplerTranslate3_dev, multiTaskDataLoaderTranslate3_dev = make_data_handlers(taskParams,
+                                                                                "translate3_dev", isTrain=False,
+                                                                               gpu=allParams['gpu'])
+    logger.info("Creating data handlers for Translate 3 test...")
+    allDataTranslate3_test, BatchSamplerTranslate3_test, multiTaskDataLoaderTranslate3_test = make_data_handlers(taskParams,
+                                                                                "translate3_test", isTrain=False,
+                                                                                gpu=allParams['gpu'])                        
 
     #Truncate 59 60
     logger.info("Creating data handlers for Truncate dev...")
@@ -573,7 +665,7 @@ def main():
         totalEpochLoss = 0
         text = "Epoch: {}".format(epoch)
         tt = int(allParams['num_train_steps']*args.grad_accumulation_steps/args.epochs)
-        print("train.py: tt: ", tt) 
+       
         with tqdm(total = tt, position=epoch, desc=text) as progress:
             
             for i, (batchMetaData, batchData) in enumerate(multiTaskDataLoaderTrain):
@@ -678,6 +770,17 @@ def main():
             with torch.no_grad():
                 evaluate(allDataBegin_test, BatchSamplerBegin_test, multiTaskDataLoaderBegin_test, taskParams,
                     model, gpu=allParams['gpu'],evalBatchSize=args.eval_batch_size, hasTrueLabels=True, needMetrics=True)
+                
+            #Begin 2 7 8
+            logger.info("\nRunning Evaluation on Begin 2 dev...")
+            with torch.no_grad():
+                evaluate(allDataBegin2_dev, BatchSamplerBegin2_dev, multiTaskDataLoaderBegin2_dev, taskParams,
+                    model, gpu=allParams['gpu'],evalBatchSize=args.eval_batch_size, hasTrueLabels=True, needMetrics=True)
+            
+            logger.info("\nRunning Evaluation on Begin 2 test...")
+            with torch.no_grad():
+                evaluate(allDataBegin2_test, BatchSamplerBegin2_test, multiTaskDataLoaderBegin2_test, taskParams,
+                    model, gpu=allParams['gpu'],evalBatchSize=args.eval_batch_size, hasTrueLabels=True, needMetrics=True)
 
             #Block 9 10
             logger.info("\nRunning Evaluation on Block dev...")
@@ -721,6 +824,17 @@ def main():
             logger.info("\nRunning Evaluation on Decrease test...")
             with torch.no_grad():
                 evaluate(allDataDecrease_test, BatchSamplerDecrease_test, multiTaskDataLoaderDecrease_test, taskParams,
+                    model, gpu=allParams['gpu'],evalBatchSize=args.eval_batch_size, hasTrueLabels=True, needMetrics=True)
+                
+            #Decrease 2 15 16
+            logger.info("\nRunning Evaluation on Decrease 2 dev...")
+            with torch.no_grad():
+                evaluate(allDataDecrease2_dev, BatchSamplerDecrease2_dev, multiTaskDataLoaderDecrease2_dev, taskParams,
+                    model, gpu=allParams['gpu'],evalBatchSize=args.eval_batch_size, hasTrueLabels=True, needMetrics=True)
+            
+            logger.info("\nRunning Evaluation on Decrease 2 test...")
+            with torch.no_grad():
+                evaluate(allDataDecrease2_test, BatchSamplerDecrease2_test, multiTaskDataLoaderDecrease2_test, taskParams,
                     model, gpu=allParams['gpu'],evalBatchSize=args.eval_batch_size, hasTrueLabels=True, needMetrics=True)
             
             #Delete 17 18
@@ -920,6 +1034,17 @@ def main():
             with torch.no_grad():
                 evaluate(allDataSplice_test, BatchSamplerSplice_test, multiTaskDataLoaderSplice_test, taskParams,
                     model, gpu=allParams['gpu'],evalBatchSize=args.eval_batch_size, hasTrueLabels=True, needMetrics=True)
+            
+            #Splice 2 51 52
+            logger.info("\nRunning Evaluation on Splice 2 dev...")
+            with torch.no_grad():
+                evaluate(allDataSplice2_dev, BatchSamplerSplice2_dev, multiTaskDataLoaderSplice2_dev, taskParams,
+                    model, gpu=allParams['gpu'],evalBatchSize=args.eval_batch_size, hasTrueLabels=True, needMetrics=True)
+            
+            logger.info("\nRunning Evaluation on Splice 2 test...")
+            with torch.no_grad():
+                evaluate(allDataSplice2_test, BatchSamplerSplice2_test, multiTaskDataLoaderSplice2_test, taskParams,
+                    model, gpu=allParams['gpu'],evalBatchSize=args.eval_batch_size, hasTrueLabels=True, needMetrics=True)
 
             #Transcribe 53 54
             logger.info("\nRunning Evaluation on Transcribe dev...")
@@ -942,6 +1067,17 @@ def main():
             with torch.no_grad():
                 evaluate(allDataTransform_test, BatchSamplerTransform_test, multiTaskDataLoaderTransform_test, taskParams,
                     model, gpu=allParams['gpu'],evalBatchSize=args.eval_batch_size, hasTrueLabels=True, needMetrics=True)
+                
+            #Transform 55 56
+            logger.info("\nRunning Evaluation on Transform 2 dev...")
+            with torch.no_grad():
+                evaluate(allDataTransform2_dev, BatchSamplerTransform2_dev, multiTaskDataLoaderTransform2_dev, taskParams,
+                    model, gpu=allParams['gpu'],evalBatchSize=args.eval_batch_size, hasTrueLabels=True, needMetrics=True)
+            
+            logger.info("\nRunning Evaluation on Transform  2 test...")
+            with torch.no_grad():
+                evaluate(allDataTransform2_test, BatchSamplerTransform2_test, multiTaskDataLoaderTransform2_test, taskParams,
+                    model, gpu=allParams['gpu'],evalBatchSize=args.eval_batch_size, hasTrueLabels=True, needMetrics=True)
 
             #Translate 57 58
             logger.info("\nRunning Evaluation on Translate dev...")
@@ -952,6 +1088,28 @@ def main():
             logger.info("\nRunning Evaluation on Translate test...")
             with torch.no_grad():
                 evaluate(allDataTranslate_test, BatchSamplerTranslate_test, multiTaskDataLoaderTranslate_test, taskParams,
+                    model, gpu=allParams['gpu'],evalBatchSize=args.eval_batch_size, hasTrueLabels=True, needMetrics=True)
+                
+            #Translate 2 57 58
+            logger.info("\nRunning Evaluation on Translate 2 dev...")
+            with torch.no_grad():
+                evaluate(allDataTranslate2_dev, BatchSamplerTranslate2_dev, multiTaskDataLoaderTranslate2_dev, taskParams,
+                    model, gpu=allParams['gpu'],evalBatchSize=args.eval_batch_size, hasTrueLabels=True, needMetrics=True)
+            
+            logger.info("\nRunning Evaluation on Translate 2 test...")
+            with torch.no_grad():
+                evaluate(allDataTranslate2_test, BatchSamplerTranslate2_test, multiTaskDataLoaderTranslate2_test, taskParams,
+                    model, gpu=allParams['gpu'],evalBatchSize=args.eval_batch_size, hasTrueLabels=True, needMetrics=True)
+                
+            #Translate 3 57 58
+            logger.info("\nRunning Evaluation on Translate 3 dev...")
+            with torch.no_grad():
+                evaluate(allDataTranslate3_dev, BatchSamplerTranslate3_dev, multiTaskDataLoaderTranslate3_dev, taskParams,
+                    model, gpu=allParams['gpu'],evalBatchSize=args.eval_batch_size, hasTrueLabels=True, needMetrics=True)
+            
+            logger.info("\nRunning Evaluation on Translate 3 test...")
+            with torch.no_grad():
+                evaluate(allDataTranslate3_test, BatchSamplerTranslate3_test, multiTaskDataLoaderTranslate3_test, taskParams,
                     model, gpu=allParams['gpu'],evalBatchSize=args.eval_batch_size, hasTrueLabels=True, needMetrics=True)
 
             #Truncate 59 60

@@ -20,20 +20,21 @@ class PerturedDataset(Dataset):
     def __getitem__(self, idx):
         sample = self.data[idx]
         if 'label' in sample: # origin
-            origin_uid = sample['uid']
             label = torch.tensor(sample['label'], dtype=torch.long)
-            token_id = torch.tensor(sample['token_id'], dtype=torch.long)
-            type_id = torch.tensor(sample['type_id'], dtype=torch.long)
-            mask = torch.tensor(sample['mask'], dtype=torch.long)
-            return origin_uid, label, token_id, type_id, mask
-        else:  # masked
-            origin_uid = sample['origin_uid'] 
-            origin_id = torch.tensor(sample['input_ids'], dtype=torch.long)
-            attention_mask = torch.tensor(sample['attention_mask'], dtype=torch.long)
-            token_type_ids = torch.tensor(sample['token_type_ids'], dtype=torch.long)
+            # dummy pos_tag_id
+            pos_tag_id = torch.zeros(len(sample['token_id']), dtype=torch.long)
+        else:  # mask
             pos_tag_id = torch.tensor(sample['pos_tag_id'], dtype=torch.long)
-            return origin_uid, origin_id, attention_mask, token_type_ids, pos_tag_id
-    
+            
+            # dummy label
+            label = torch.zeros(len(sample['token_id']), dtype=torch.long)
+          
+        origin_uid = sample['uid']
+        token_id = torch.tensor(sample['token_id'], dtype=torch.long)
+        type_id = torch.tensor(sample['type_id'], dtype=torch.long)
+        mask = torch.tensor(sample['mask'], dtype=torch.long)
+        return origin_uid, token_id, type_id, mask, label, pos_tag_id
+        
     
     def generate_batches(self, dataset, batch_size):
         """

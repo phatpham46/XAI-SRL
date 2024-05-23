@@ -1,6 +1,6 @@
 from sklearn.metrics import f1_score
 import ast, os
-
+from utils.eval_metrics import classification_f1_score
 def read_pred_file(filePath):
     data = []
     predictions = []
@@ -19,29 +19,29 @@ def read_pred_file(filePath):
 
 
 def processing_data(labels, predictions):
-    lineTokens = [ast.literal_eval(label) for label in labels]
-    lineLabels = [ast.literal_eval(prediction) for prediction in predictions]
+    labels = [ast.literal_eval(label) for label in labels]
+    predictions = [ast.literal_eval(prediction) for prediction in predictions]
 
-    trueLabels = [] # labels
-    predictLabels = [] # predictions
+    newLabels = [] # labels
+    newPreds = [] # predictions
 
-    for lineTok, lineLab in zip(lineTokens, lineLabels):
-        if lineLab in ['[CLS]','[SEP]', 'X']: # replace non-text tokens with O. These will not be evaluated.
-            predictLabels.append('O')
-            trueLabels.append('O')
+    for l, p in zip(labels, predictions):
+        if p in ['[CLS]','[SEP]', 'X']: # replace non-text tokens with O. These will not be evaluated.
+            newPreds.append('O')
+            newLabels.append('O')
             continue
-        if(lineLab == "B-V"):
-            predictLabels.append("V")
+        if(p == "B-V"):
+            newPreds.append("V")
         else:
-            predictLabels.append(lineLab)
-            trueLabels.append(lineTok) 
-    return trueLabels, predictLabels
+            newPreds.append(p)
+            newLabels.append(l) 
+    return newLabels, newPreds
 
 
 def main():
-    dirPath = "/kaggle/working/output_srl_model/"
+    dirPath = "./output_SRL_finetuned"
     files = []
-    print(1111)
+  
     for path in os.listdir(dirPath):
         if os.path.isfile(os.path.join(dirPath, path)):
             files.append(path)
@@ -63,7 +63,7 @@ def main():
         
     y_true = [item for sublist in y_true for item in sublist]
     y_pred = [item for sublist in y_pred for item in sublist]
-    result_f1 = f1_score(y_true, y_pred, average="micro")    
+    result_f1 = classification_f1_score(y_true, y_pred)    
     print("F1 score: ", result_f1) 
    
 
