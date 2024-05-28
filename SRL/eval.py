@@ -107,9 +107,9 @@ def evaluate(dataSet, batchSampler, dataLoader, taskParams,
                 logger.info("********** {} Evaluation************\n".format(taskName))
                 for m in metrics:
                     metricVal = METRICS[m](allLabels[i], allPreds[i])
+                    logger.info("{} : {}".format(m, metricVal))
                    
                     brier_score = METRICS['brier_score'](allLabels_str[i], allLogits[i])
-                    logger.info("{} : {}".format(m, metricVal))
                     logger.info("Brier Score : {}".format(brier_score))
 
     if wrtPredPath is not None and wrtDir is not None:
