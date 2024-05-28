@@ -267,16 +267,17 @@ class multiTaskModel:
         attnMasksBatch = batchData[2]
         predictedTags = []
         predScoreTags = []
+        logitSm = []
         if attnMasksBatch is not None:
             #shape of attention Masks (batchSize, maxSeqLen)
             actualLengths = attnMasksBatch.cpu().numpy().sum(axis = 1).tolist()
             for i, (pred, sc) in enumerate(zip(predicted, predScore)):
                 predictedTags.append( pred[:actualLengths[i]] )
                 predScoreTags.append( sc[:actualLengths[i]])
-            
-            return predictedTags, predScoreTags
+                logitSm.append(outLogitsSoftmax[i][:actualLengths[i]])
+            return predictedTags, predScoreTags, logitSm
         else:
-            return predicted, predScore
+            return predicted, predScore, outLogitsSoftmax
        
 
     def save_multi_task_model(self, savePath):
