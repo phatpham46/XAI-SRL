@@ -4,18 +4,14 @@ Final Training script to run traininig for multi-task
 import argparse
 import random
 import numpy as np
-import pandas as pd
-import logging
 import torch
 import os
 import math
 from datetime import datetime
-from tqdm import tqdm
-from torch.utils.tensorboard import SummaryWriter
 from utils.task_utils import TasksParam   
 
 from SRL.data_manager import allTasksDataset, Batcher, batchUtils
-from torch.utils.data import Dataset, DataLoader, BatchSampler
+from torch.utils.data import DataLoader
 from logger_ import make_logger
 from SRL.model import multiTaskModel
 from SRL.eval import evaluate
@@ -193,8 +189,6 @@ def main():
     allParams['gpu'] = torch.cuda.is_available()
     logger.info('task parameters:\n {}'.format(taskParams.taskDetails))
 
-    tensorboard = SummaryWriter(log_dir = os.path.join(logDir, 'tb_logs'))
-    logger.info("Tensorboard writing at {}".format(os.path.join(logDir, 'tb_logs')))
 
     # making handlers for train
     logger.info("Creating data handlers for training...")
