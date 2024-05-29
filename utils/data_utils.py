@@ -40,8 +40,8 @@ METRICS = {
     "snips_f1_score" : snips_f1_score,
     "snips_precision" : snips_precision,
     "snips_recall" : snips_recall,
-    "classification_recall" : classification_recall,
-    "brier_score" : brier_score_for_batch,
+    "classification_recall" : classification_recall
+    # "brier_score" : brier_score_for_batch,
 }
 
 LOSSES = {

@@ -80,12 +80,25 @@ def get_pos_tag_id(word_dict:dict, pos_tag_dict: dict, label_id:list):
         for i in range(len(label_id) - len(tokens) + 1):
             if torch.equal(torch.as_tensor(label_id[i:i+len(tokens)]).clone().detach(), torch.as_tensor(tokens).clone().detach()):
                
-                # pos_tag_id[i:i+len(tokens)] = pos_tag_mapping(pos_tag_dict.get(key))
                 pos_tag_id[i:i+len(tokens)] = POS_TAG_MAPPING[pos_tag_dict.get(key)]
  
     return pos_tag_id
 
-
+def get_idx_arg_preds(preds_origin, preds_masked, label_origin=None): # label_origin: nhãn gold
+    list_idx_arg_change = []
+ 
+    
+    for i in range(min(len(preds_masked), len(preds_origin))):
+        test = preds_origin[i].startswith('B-A') or preds_origin[i].startswith('I-A') or preds_masked[i].startswith('B-A') or preds_masked[i].startswith('I-A')
+        if label_origin:
+            assert len(preds_origin) == len(label_origin), 'Length of preds_origin and label_origin must be the same'
+            if test or label_origin[i].startswith('B-A') or label_origin[i].startswith('I-A'):
+                list_idx_arg_change.append(i)
+        else:
+            if test:
+                list_idx_arg_change.append(i)
+   
+    return list_idx_arg_change
     
 def decode_token(input_ids: list, skip_special_tokens=False) -> str:
     ''' Funciton to decode the token to text

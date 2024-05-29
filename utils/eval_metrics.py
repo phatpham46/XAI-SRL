@@ -87,34 +87,7 @@ def seqeval_recall(yTrue, yPred):
     return recall_score(yTrue, yPred)
 
 
-def brier_score_for_batch(yTrue, yProb):
-    def brier_score_multi_class(y_true, y_prob):
-        """
-        Calculate the Brier score for multi-class classification using scikit-learn.
 
-        Parameters:
-        y_true (numpy.ndarray): True class labels, shape (n_samples,)
-        y_prob (numpy.ndarray): Predicted probabilities, shape (n_samples, n_classes)
-
-        Returns:
-        float: Brier score
-        """
-        
-        y_prob = np.array(y_prob, dtype=float)  # Predicted probabilities
-        # Ensure y_true is a 1D array
-        y_true = np.array(y_true)
-        
-        # label map 
-        # y_true = [label_map[item] for item in y_true]
-       
-        y_true_one_hot = label_binarize(y_true, classes=np.arange(y_prob.shape[1]))
-
-        # Calculate the Brier score for each class and average them
-        brier_scores = np.array([brier_score_loss(y_true_one_hot[:, i], y_prob[:, i], pos_label=1) for i in range(y_prob.shape[1])])
-        return np.mean(brier_scores)
-
-    brier_score_batch = list(map(brier_score_multi_class, yTrue, yProb))
-    return np.mean(brier_score_batch)
 
 # compute f1 score is modified from conlleval.pl
 def __startOfChunk(prevTag, tag, prevTagType, tagType, chunkStart = False):

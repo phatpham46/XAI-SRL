@@ -1,18 +1,17 @@
 
-import numpy as np
-import sys
-sys.path.append('../')
+import numpy as np 
+import pandas as pd
 from data_preparation import * 
 from mlm_utils.pertured_dataset import PerturedDataset
 import torch.nn as nn
-import math
 import os
 import torch
+from mlm_utils.metric_func import brier_score_multi_class
 
 class DataMaker():
-    def __init__(self, data_file, out_dir, eval_batch_size=32, max_seq_len=85, seed=42):
+    def __init__(self, data_file, eval_batch_size=32, max_seq_len=85, seed=42):
         self.data_file = data_file
-        self.out_dir = out_dir
+        
         self.eval_batch_size = eval_batch_size
         self.max_seq_len = max_seq_len
         self.seed = seed
@@ -35,7 +34,6 @@ class DataMaker():
             batch = tuple(t.to(self.device) if isinstance(t, torch.Tensor) else t for t in batch)
 
             origin_uid, token_id, type_id, mask, label, pos_tag_id = batch
-            
             with torch.no_grad():
                 _, logits = model.network(token_id, type_id, mask, 0, 'conllsrl')
 
@@ -75,37 +73,31 @@ class DataMaker():
                 allLabels.append(label.tolist())
                 allLogitsRaw.append(logits.data.cpu().numpy())
                 allOriginUIDs.append(origin_uid)
-            break
+            
+        allOriginUIDs = [item for sublist in allOriginUIDs for item in sublist]
+        allPreds = [item for sublist in allPreds for item in sublist]
+        allScores = [item for sublist in allScores for item in sublist]
+        allLogitsSoftmax = [item for sublist in allLogitsSoftmax for item in sublist]
+        allLogitsRaw = [item for sublist in allLogitsRaw for item in sublist]
+        allLabels = [item for sublist in allLabels for item in sublist]
 
-        labMapRevN = {0: 'B-A1',
-                        1: 'I-A1',
-                        2: 'O',
-                        3: 'B-V',
-                        4: 'B-A0',
-                        5: 'I-A0',
-                        6: 'B-A4',
-                        7: 'I-A4',
-                        8: 'I-A3',
-                        9: 'B-A2',
-                        10: 'I-A2',
-                        11: 'B-A3',
-                        12: '[CLS]',
-                        13: '[SEP]',
-                        14: 'X'}
+        return allOriginUIDs, allPreds, allScores, allLogitsSoftmax, allLogitsRaw, allLabels
 
-        print("allPreds: ", len(allPreds), len(allPreds[0]))
+
+    def evaluate(self, model, labMapRevN, wrtPredPath=None, wrtDir=None, returnPreds=True, hasTrueLabels=True, needMetrics=True):
+        allOriginUIDs, allPreds, allScores, allLogitsSoftmax, allLogitsRaw, allLabels = self.get_predictions(model)
         
         for j, (p, l) in enumerate(zip(allPreds, allLabels)):
             allLabels[j] = l[:len(p)]
             allPreds[j] = [labMapRevN[int(ele)] for ele in p]
             allLabels[j] = [labMapRevN[int(ele)] for ele in allLabels[j]]
-        #allPreds[i] = [ [ labMapRev[int(p)] for p in pp ] for pp in allPreds[i] ]
-        #allLabels[i] = [ [labMapRev[int(l)] for l in ll] for ll in allLabels[i] ]
-
+        
         newPreds = []
         newLabels = []
         newScores = []
         newLogitsSoftmax = []
+        
+        labelMap = {v:k for k,v in labMapRevN.items()}
         for m, samp in enumerate(allLabels):
             Preds = []
             Labels = []
@@ -114,27 +106,43 @@ class DataMaker():
             for n, ele in enumerate(samp):
                 #print(ele)
                 if ele != '[CLS]' and ele != '[SEP]' and ele != 'X':
-                    #print('inside')
+                  
                     Preds.append(allPreds[m][n])
                     Labels.append(ele)
                     Scores.append(allScores[m][n])
                     LogitsSm.append(allLogitsSoftmax[m][n])
-                    #del allLabels[i][m][n]
-                    #del allPreds[i][m][n]
+                    
             newPreds.append(Preds)
             newLabels.append(Labels)
             newScores.append(Scores)
             newLogitsSoftmax.append(LogitsSm)
+        
         allLabels = newLabels
         allPreds = newPreds
         allScores = newScores    
         allLogitsSoftmax = newLogitsSoftmax        
-                
+        
+        if needMetrics:
+        
+            print("**********Evaluation************\n")
+            
+            brier_score_batch = list(map(brier_score_multi_class, allLabels, allLogitsSoftmax))
+            brier_score_batch = np.mean(brier_score_batch)
+            print("Brier Score: ", brier_score_batch)
+        
         # flatten allPreds, allScores
-        allOriginUIDs = [item for sublist in allOriginUIDs for item in sublist]
-        allPreds = [item for sublist in allPreds for item in sublist]
-        allScores = [item for sublist in allScores for item in sublist]
-        allLogitsSoftmax = [item for sublist in allLogitsSoftmax for item in sublist]
-        allLogitsRaw = [item for sublist in allLogitsRaw for item in sublist]
-        allLabels = [item for sublist in allLabels for item in sublist]
-        return allOriginUIDs, allPreds, allScores, allLogitsSoftmax, allLogitsRaw, allLabels    
+        if wrtPredPath is not None and wrtDir is not None:
+            for i in range(len(allPreds)):
+                if allPreds[i] == []:
+                    continue
+                if hasTrueLabels:
+                    df = pd.DataFrame({"uid" : allOriginUIDs[i], "prediction" : allPreds[i], "label" : allLabels[i]})
+                    savePath = os.path.join(wrtDir, "origin_{}".format(wrtPredPath))
+                else:
+                    df = pd.DataFrame({"uid" : allOriginUIDs[i], "prediction" : allPreds[i]})
+                    savePath = os.path.join(wrtDir, "masked_{}".format(wrtPredPath))
+
+            df.to_csv(savePath, sep = "\t", index = False)
+        
+        if returnPreds:
+            return allOriginUIDs, allPreds, allScores, allLogitsSoftmax, allLogitsRaw, allLabels  
