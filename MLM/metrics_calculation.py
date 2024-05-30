@@ -177,7 +177,7 @@ def main():
 
 
     corr, p_value  = spearmanr(comp_list, brier_score_list)
-    logger.info("Spearman Correlation Coefficient: ", corr, "with p-value: ", p_value)
+    logger.info("Spearman Correlation Coefficient: {}, with p-value {}".format(corr, p_value))
 
     plot_corr(comp_list, brier_score_list, save_img=True, save_path=args.log_name)
     logger.info("Done Visualization.")
