@@ -5,7 +5,7 @@ from matplotlib import pyplot as plt
 import torch
 import numpy as np 
 from pathlib import Path
-sys.path.append('..')
+sys.path.append('/kaggle/working/SRLPredictionEasel')
 from SRL.model import multiTaskModel
 from data_maker import DataMaker
 from data_preparation import * 
@@ -119,15 +119,15 @@ def get_comp_each_arg(dataMaskedDir, dataOriginDir, model, labelRn, logger):
     return list_spearrman_dict
 
 # using plot to visualize the result
-def plot_corr(comp_list, brier_score_list, save_img=False):
+def plot_corr(comp_list, brier_score_list, save_img=False, save_path=None):
     
     plt.scatter(comp_list, brier_score_list)
     plt.xlabel('Competence')
     plt.ylabel('Brier Score')
     plt.title('Correlation between Competence vs Brier Score')
     plt.show()
-    if save_img:
-        plt.savefig('spearrman_corr.png')
+    if save_img and save_path is not None:
+        plt.savefig('{}.png'.format(save_path))
 
 
 def main():
@@ -179,7 +179,7 @@ def main():
     corr, p_value  = spearmanr(comp_list, brier_score_list)
     logger.info("Spearman Correlation Coefficient: ", corr, "with p-value: ", p_value)
 
-    plot_corr(comp_list, brier_score_list, save_img=True)
+    plot_corr(comp_list, brier_score_list, save_img=True, save_path=args.log_name)
     logger.info("Done Visualization.")
 if __name__ == '__main__':
     main()
