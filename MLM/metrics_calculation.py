@@ -127,7 +127,7 @@ def plot_corr(comp_list, brier_score_list, save_img=False, save_path=None):
     plt.title('Correlation between Competence vs Brier Score')
     plt.show()
     if save_img and save_path is not None:
-        plt.savefig('{}.png'.format(save_path))
+        plt.savefig(save_path)
 
 
 def main():
@@ -177,9 +177,9 @@ def main():
 
 
     corr, p_value  = spearmanr(comp_list, brier_score_list)
-    logger.info("Spearman Correlation Coefficient: {}, with p-value {}".format(corr, p_value))
+    logger.info("Spearman Correlation Coefficient: {}, with p-value {}.".format(corr, p_value))
 
-    plot_corr(comp_list, brier_score_list, save_img=True, save_path=args.log_name)
+    plot_corr(comp_list, brier_score_list, save_img=True, save_path=os.path.join(logDir, 'img_{}.png'.format(args.log_name)))
     logger.info("Done Visualization.")
 if __name__ == '__main__':
     main()
