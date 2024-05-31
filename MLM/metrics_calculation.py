@@ -103,7 +103,7 @@ def get_comp_each_arg(dataMaskedDir, dataOriginDir, model, labelRn, logger, is_m
     for mask, origin in zip(file_mask, file_origin):
         logger.info("Calculate file {} and {}".format(mask, origin))
         resultwordMasked = get_word(dataMaskedDir, mask, model, labelRn, hasTrueLabels=False, needMetrics=False, is_mask_token=is_mask_token, del_mask_token=del_mask_token)
-        resultOrigin = get_word(dataOriginDir, origin, model, labelRn, hasTrueLabels=True, needMetrics=False, is_mask_token=is_mask_token, del_mask_token=del_mask_token)
+        resultOrigin = get_word(dataOriginDir, origin, model, labelRn, hasTrueLabels=True, needMetrics=False)
 
         labelMap = {v: k for k, v in labelRn.items()}
         comp_score = get_pair_inf_rel(resultOrigin, resultwordMasked, labelMap)
@@ -123,9 +123,19 @@ def get_comp_each_arg(dataMaskedDir, dataOriginDir, model, labelRn, logger, is_m
 def plot_corr(comp_list, brier_score_list, save_img=False, save_path=None):
     
     plt.scatter(comp_list, brier_score_list)
+    plt.xlim(-1, 1)
+    plt.ylim(-1, 1)
     plt.xlabel('Competence')
     plt.ylabel('Brier Score')
     plt.title('Correlation between Competence vs Brier Score')
+    
+    # Thêm trục phân cách (trục x và y đi qua điểm (0, 0))
+    plt.axhline(y=0, color='k', linestyle=':')  # Đường ngang tại y=0
+    plt.axvline(x=0, color='k', linestyle=':')  # Đường dọc tại x=0
+
+    # Hiển thị biểu đồ
+    plt.grid(True)
+    
     plt.show()
     if save_img and save_path is not None:
         plt.savefig(save_path)

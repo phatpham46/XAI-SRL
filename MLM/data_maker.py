@@ -40,12 +40,13 @@ class DataMaker():
                     _, logits = model.network(masked_id, type_id, mask, 0, 'conllsrl')
                 
                 elif del_mask_token:
-                   
+                    
                     # delete mask token (103) in masked_id and padding token 0 at the end
+                    masked_id = masked_id.cpu().numpy().tolist()
                     filtered_ids = [[item for item in sublist if item != 103] for sublist in masked_id]
 
                     padded_ids = pad_sequences(filtered_ids, maxlen=self.max_seq_len, padding='post', truncating='post', value=0)
-                  
+                   
                     token_id = torch.tensor(padded_ids, dtype=torch.long).to(self.device)
                     _, logits = model.network(token_id, type_id, mask, 0, 'conllsrl')
                     
