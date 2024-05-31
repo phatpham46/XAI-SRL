@@ -3,7 +3,7 @@ import os
 import numpy as np
 import torch
 
-from MLM.mlm_utils.model_utils import NLP, TOKENIZER, MAX_SEQ_LEN, POS_TAG_MAPPING
+from mlm_utils.model_utils import NLP, TOKENIZER, MAX_SEQ_LEN, POS_TAG_MAPPING
 
 def check_data_dir(data_dir: str, auto_create=False) -> None:
     """ Check if the data directory exists. If it does not exist, create it if auto_create is True.

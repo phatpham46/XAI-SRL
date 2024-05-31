@@ -129,7 +129,7 @@ def masking_sentence_word(words: list, input_ids: torch.tensor, offsets: list):
     
     # create a list of masked sentence from one input id
     pos_tag_id = []
-    
+    list_masked_id = []
     for (key, value) in word_dict.items():
         masked_ids = input_ids.clone() 
         origin_sample = decode_token(masked_ids[0], skip_special_tokens=True)
@@ -149,10 +149,11 @@ def masking_sentence_word(words: list, input_ids: torch.tensor, offsets: list):
                             label[0][idx] = pos_tag_mapping(get_pos_tag_word(key, origin_sample).get(key))
                             
                     pos_tag_id.append(label)
+                    list_masked_id.append(masked_id)
     
-    return input_ids, pos_tag_id
+    return input_ids, pos_tag_id, list_masked_id
 
-def data_preprocessing(dataDir: str, wriDir: str):
+def data_preprocessing(dataDir: str, labelDir: str, wriDir: str):
     '''
     data_preprocessing('./interim/', './mlm_output/')
     Function to create data in MLM format.
@@ -166,16 +167,24 @@ def data_preprocessing(dataDir: str, wriDir: str):
     check_data_dir(wriDir, auto_create=True)
     
     files = get_files(dataDir)
-    for file in files:
-        
+    label_files = get_files(labelDir)
+    for file, label_file in zip(files, label_files):
+        print("Processing file: ", file, "label file ", label_file)
         features = []
         writeFile = os.path.join(wriDir, 'mlm_{}.csv'.format(file.split('.')[0]))
         
         data = pd.read_csv(os.path.join(dataDir, file))
-        print("Processing file: ", file)
-    
+        with open(os.path.join(labelDir, label_file), 'r') as f1: 
+            data_label = [json.loads(line) for line in f1]
+            
+        # Create a dictionary from data_label for quick lookup
+        label_dict = {int(item['uid']): item['label'] for item in data_label}
+
         with tqdm(total=len(data['text'])) as pbar:
             for id, sample in zip(data['id'], data['text']):    
+                if id in label_dict:
+                    label = label_dict[id]
+                
                 
                 # Get word list from sample
                 word_lst = get_word_list(sample)
@@ -184,20 +193,22 @@ def data_preprocessing(dataDir: str, wriDir: str):
                 tokenized_sentence = encode_text(' '.join(word_lst))
                 
                 # Mask the content words
-                input_id, pos_tag_ids = masking_sentence_word(
+                input_id, pos_tag_ids, list_masked_id = masking_sentence_word(
                     word_lst, 
                     tokenized_sentence['input_ids'], 
                     tokenized_sentence['offset_mapping'][0]
                     )
                 # Create a feature for each masked sentence
-                for pos_tag_id in pos_tag_ids:
+                for pos_tag_id, masked_id in zip(pos_tag_ids, list_masked_id):
                     
                     feature = {
-                        'origin_uid': id,
-                        'origin_id': input_id[0].numpy().tolist(),
-                        'attention_mask': tokenized_sentence['attention_mask'][0].numpy().tolist(),  
-                        'token_type_ids': tokenized_sentence['token_type_ids'][0].numpy().tolist(),
-                        'pos_tag_id': pos_tag_id[0].numpy().tolist()
+                        'uid': id,  # origin_id
+                        'token_id': input_id[0].numpy().tolist(),
+                        'mask': tokenized_sentence['attention_mask'][0].numpy().tolist(),  
+                        'type_id': tokenized_sentence['token_type_ids'][0].numpy().tolist(),
+                        'pos_tag_id': pos_tag_id[0].numpy().tolist(),
+                        'masked_id': masked_id[0].numpy().tolist(),
+                        'label': label
                        }
                 
                     features.append(feature)
@@ -212,7 +223,7 @@ def data_preprocessing(dataDir: str, wriDir: str):
         
 def main():
     
-    data_preprocessing('./data_mlm/raw_folder/interim/', './data_mlm/process_folder/mlm_output/')
+    data_preprocessing('./data_mlm/raw_folder/interim/', './data_mlm/process_folder/coNLL_tsv_json/ner_json/', './data_mlm/process_folder/mlm_output_v2/')
     
 if __name__ == "__main__":
     main() 

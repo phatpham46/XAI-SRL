@@ -110,8 +110,6 @@ def convert_csv_to_txt(dataDir, wrtDir, readFile, transParamDict, isTrainFile=Fa
             while idx_token < len(tokens):
                 for tuple_arg in arguments:
                     key, value = tuple_arg
-                    if predicate in ['begin', 'modify', 'catalyse','lose', 'lead'] and tokens[idx_token] in ['began', 'begun', 'modified', 'catalyze', 'catalyzing', 'catalysing', 'lost', 'led'] and arg_list[idx_token] is None:
-                        arg_list[idx_token] = 'B-V'
                         
                     if (predicate in tokens[idx_token] or predicate[:-1] in tokens[idx_token]) and arg_list[idx_token] is None:
                         arg_list[idx_token] = 'B-V'

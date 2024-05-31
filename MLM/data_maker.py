@@ -2,7 +2,7 @@
 import numpy as np 
 import pandas as pd
 from data_preparation import * 
-from mlm_utils.pertured_dataset import PerturedDataset
+from mlm_utils.pertured_dataset import PerturbedDataset
 import torch.nn as nn
 import os
 import torch
@@ -18,10 +18,10 @@ class DataMaker():
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         assert os.path.exists(self.data_file), "prediction tsv file not present at {}".format(self.data_file)
         
-        self.dataset = PerturedDataset(self.data_file, self.device)
+        self.dataset = PerturbedDataset(self.data_file, self.device)
         self.dataloader = self.dataset.generate_batches(self.dataset, self.eval_batch_size)
        
-    def get_predictions(self, model):
+    def get_predictions(self, model, is_mask_token):
         model.network.eval()
         
         allPreds = []
@@ -33,9 +33,12 @@ class DataMaker():
         for batch in tqdm(self.dataloader, total = len(self.dataloader)):
             batch = tuple(t.to(self.device) if isinstance(t, torch.Tensor) else t for t in batch)
 
-            origin_uid, token_id, type_id, mask, label, pos_tag_id = batch
+            origin_uid, token_id, type_id, mask, label, pos_tag_id, masked_id = batch
+            
             with torch.no_grad():
-                _, logits = model.network(token_id, type_id, mask, 0, 'conllsrl')
+                if is_mask_token:
+                    _, logits = model.network(masked_id, type_id, mask, 0, 'conllsrl')
+                else: _, logits = model.network(token_id, type_id, mask, 0, 'conllsrl')
 
                
                 outLogitsSoftmax = nn.functional.softmax(logits, dim = 2).data.cpu().numpy()
@@ -84,8 +87,8 @@ class DataMaker():
         return allOriginUIDs, allPreds, allScores, allLogitsSoftmax, allLogitsRaw, allLabels
 
 
-    def evaluate(self, model, labMapRevN, wrtPredPath=None, wrtDir=None, returnPreds=True, hasTrueLabels=True, needMetrics=True):
-        allOriginUIDs, allPreds, allScores, allLogitsSoftmax, allLogitsRaw, allLabels = self.get_predictions(model)
+    def evaluate(self, model, labMapRevN, wrtPredPath=None, wrtDir=None, returnPreds=True, hasTrueLabels=True, needMetrics=True, is_mask_token=False):
+        allOriginUIDs, allPreds, allScores, allLogitsSoftmax, allLogitsRaw, allLabels = self.get_predictions(model, is_mask_token)
         
         for j, (p, l) in enumerate(zip(allPreds, allLabels)):
             allLabels[j] = l[:len(p)]
