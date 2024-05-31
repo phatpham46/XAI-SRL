@@ -5,7 +5,7 @@ from matplotlib import pyplot as plt
 import torch
 import numpy as np 
 from pathlib import Path
-sys.path.append('../')
+sys.path.append('/kaggle/working/SRLPredictionEasel')
 from SRL.model import multiTaskModel
 from data_maker import DataMaker
 from data_preparation import * 
