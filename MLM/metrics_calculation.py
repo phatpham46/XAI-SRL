@@ -124,7 +124,7 @@ def plot_corr(comp_list, brier_score_list, save_img=False, save_path=None):
     
     plt.scatter(comp_list, brier_score_list)
     plt.xlim(-1, 1)
-    plt.ylim(-1, 1)
+    plt.ylim(0, 1)
     plt.xlabel('Competence')
     plt.ylabel('Brier Score')
     plt.title('Correlation between Competence vs Brier Score')
