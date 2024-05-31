@@ -6,6 +6,7 @@ import torch
 import numpy as np 
 from pathlib import Path
 sys.path.append('/kaggle/working/SRLPredictionEasel')
+# sys.path.append('../')
 from SRL.model import multiTaskModel
 from data_maker import DataMaker
 from data_preparation import * 
@@ -39,12 +40,12 @@ def load_params(model_file):
 
     return allParams, loadedDict
 
-def get_word(dataDir, file_name, model, labelRn, wrtDir=None, hasTrueLabels=True, needMetrics=True, is_mask_token=False):
+def get_word(dataDir, file_name, model, labelRn, wrtDir=None, hasTrueLabels=True, needMetrics=True, is_mask_token=False, del_mask_token=False):
     dataMaker = DataMaker(
         data_file= os.path.join(dataDir, file_name)
     )
     
-    result = dataMaker.evaluate(model, labelRn, wrtPredPath=file_name, wrtDir=wrtDir, returnPreds=True, hasTrueLabels=hasTrueLabels, needMetrics=needMetrics, is_mask_token=is_mask_token)
+    result = dataMaker.evaluate(model, labelRn, wrtPredPath=file_name, wrtDir=wrtDir, returnPreds=True, hasTrueLabels=hasTrueLabels, needMetrics=needMetrics, is_mask_token=is_mask_token, del_mask_token=del_mask_token)
     return {
         'uid': result[0],
         'pred': result[1],
@@ -94,15 +95,15 @@ def get_pair_inf_rel(origin, masked, labelMap):
     return comp_dict
 
 
-def get_comp_each_arg(dataMaskedDir, dataOriginDir, model, labelRn, logger, is_mask_token):
+def get_comp_each_arg(dataMaskedDir, dataOriginDir, model, labelRn, logger, is_mask_token, del_mask_token):
     file_mask = sorted(get_files(dataMaskedDir))
     file_origin = sorted(get_files(dataOriginDir))
     
     list_spearrman_dict = []
     for mask, origin in zip(file_mask, file_origin):
         logger.info("Calculate file {} and {}".format(mask, origin))
-        resultwordMasked = get_word(dataMaskedDir, mask, model, labelRn, hasTrueLabels=False, needMetrics=False, is_mask_token=is_mask_token)
-        resultOrigin = get_word(dataOriginDir, origin, model, labelRn, hasTrueLabels=True, needMetrics=False, is_mask_token=is_mask_token)
+        resultwordMasked = get_word(dataMaskedDir, mask, model, labelRn, hasTrueLabels=False, needMetrics=False, is_mask_token=is_mask_token, del_mask_token=del_mask_token)
+        resultOrigin = get_word(dataOriginDir, origin, model, labelRn, hasTrueLabels=True, needMetrics=False, is_mask_token=is_mask_token, del_mask_token=del_mask_token)
 
         labelMap = {v: k for k, v in labelRn.items()}
         comp_score = get_pair_inf_rel(resultOrigin, resultwordMasked, labelMap)
@@ -144,6 +145,7 @@ def main():
     parser.add_argument('--log_name', type=str, default = 'cal_comp_by_arg',
                         help = "name of the log file to be created.")
     parser.add_argument('--is_mask_token', type=bool, default=False )
+    parser.add_argument('--del_mask_token', type=bool, default=False )
     args = parser.parse_args()
     
     
@@ -166,7 +168,7 @@ def main():
     model.load_multi_task_model(a[1])
     logger.info('saved model loaded with global step {} from {}'.format(model.globalStep,
                                                                             args.model_path))
-    list_spearmanr_dict = get_comp_each_arg(args.data_mask_dir, args.data_origin_dir, model, labelRn, logger, is_mask_token=args.is_mask_token)
+    list_spearmanr_dict = get_comp_each_arg(args.data_mask_dir, args.data_origin_dir, model, labelRn, logger, is_mask_token=args.is_mask_token, del_mask_token=args.del_mask_token)
     
     comp_list = []
     brier_score_list = []

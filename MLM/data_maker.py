@@ -21,7 +21,7 @@ class DataMaker():
         self.dataset = PerturbedDataset(self.data_file, self.device)
         self.dataloader = self.dataset.generate_batches(self.dataset, self.eval_batch_size)
        
-    def get_predictions(self, model, is_mask_token):
+    def get_predictions(self, model, is_mask_token, del_mask_token):
         model.network.eval()
         
         allPreds = []
@@ -38,6 +38,17 @@ class DataMaker():
             with torch.no_grad():
                 if is_mask_token:
                     _, logits = model.network(masked_id, type_id, mask, 0, 'conllsrl')
+                
+                elif del_mask_token:
+                   
+                    # delete mask token (103) in masked_id and padding token 0 at the end
+                    filtered_ids = [[item for item in sublist if item != 103] for sublist in masked_id]
+
+                    padded_ids = pad_sequences(filtered_ids, maxlen=self.max_seq_len, padding='post', truncating='post', value=0)
+                  
+                    token_id = torch.tensor(padded_ids, dtype=torch.long).to(self.device)
+                    _, logits = model.network(token_id, type_id, mask, 0, 'conllsrl')
+                    
                 else: _, logits = model.network(token_id, type_id, mask, 0, 'conllsrl')
 
                
@@ -87,8 +98,8 @@ class DataMaker():
         return allOriginUIDs, allPreds, allScores, allLogitsSoftmax, allLogitsRaw, allLabels
 
 
-    def evaluate(self, model, labMapRevN, wrtPredPath=None, wrtDir=None, returnPreds=True, hasTrueLabels=True, needMetrics=True, is_mask_token=False):
-        allOriginUIDs, allPreds, allScores, allLogitsSoftmax, allLogitsRaw, allLabels = self.get_predictions(model, is_mask_token)
+    def evaluate(self, model, labMapRevN, wrtPredPath=None, wrtDir=None, returnPreds=True, hasTrueLabels=True, needMetrics=True, is_mask_token=False, del_mask_token=False):
+        allOriginUIDs, allPreds, allScores, allLogitsSoftmax, allLogitsRaw, allLabels = self.get_predictions(model, is_mask_token, del_mask_token)
         
         for j, (p, l) in enumerate(zip(allPreds, allLabels)):
             allLabels[j] = l[:len(p)]
