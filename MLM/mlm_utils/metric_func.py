@@ -29,7 +29,6 @@ def cosine_module(a, b, cosine_sum):
     return round(module_similarity * cosine_sum, 5)
 
 
-
 def influence_score(outLogitsSigmoid_original, outLogitsSigmoid_meddle, list_arg_change):
     influence_score = []
     weight = []
@@ -122,6 +121,7 @@ def brier_score_multi_class(y_true, y_prob, labelMap):
     brier_scores = np.array([brier_score_loss(y_true_one_hot[:, i], y_prob[:, i], pos_label=1) for i in range(y_prob.shape[1])])
     return np.mean(brier_scores) # mean for all classes
 
+
 def competence_score(comp):
     influence_values = [abs(item['influence']) for item in comp]
     relevance_values = [item['relevance'] for item in comp]
@@ -131,8 +131,3 @@ def competence_score(comp):
     # get brier score for each unique uid in comp
     brier_score = np.mean([item['brier_score'] for item in comp])
     return round(correlation_coefficient, 4), round(p_value, 4), round(brier_score, 4)
-
-def brier_score_for_batch(yTrue, yProb):
-    
-    brier_score_batch = list(map(brier_score_multi_class, yTrue, yProb))
-    return np.mean(brier_score_batch)

@@ -16,31 +16,7 @@ class PerturbedDataset(Dataset):
             
     def __len__(self):
         return len(self.data)
-    
-    # def __getitem__(self, idx):
-    #     sample = self.data[idx]
-    #     if 'label' in sample: # origin
-    #         label = torch.tensor(sample['label'], dtype=torch.long)
-            
-    #         # dummy pos_tag_id
-    #         pos_tag_id = torch.zeros(len(sample['token_id']), dtype=torch.long)
-        
-    #     elif 'masked_id' in sample and 'pos_tag_id' in sample: # mlm_output: dữ liệu có chứa token_mask: 103
-    #         token_id = torch.tensor(sample['masked_id'], dtype=torch.long)
-    #         pos_tag_id = torch.tensor(sample['pos_tag_id'], dtype=torch.long)
-    #         label = torch.tensor(sample['label'], dtype=torch.long)
-            
-    #     else:  # masked for each method
-    #         pos_tag_id = torch.tensor(sample['pos_tag_id'], dtype=torch.long)
-            
-    #         # dummy label
-    #         label = torch.zeros(len(sample['token_id']), dtype=torch.long)
-          
-    #     origin_uid = sample['uid']
-    #     token_id = torch.tensor(sample['token_id'], dtype=torch.long)
-    #     type_id = torch.tensor(sample['type_id'], dtype=torch.long)
-    #     mask = torch.tensor(sample['mask'], dtype=torch.long)
-    #     return origin_uid, token_id, type_id, mask, label, pos_tag_id
+  
     def __getitem__(self, idx):
         sample = self.data[idx]
        

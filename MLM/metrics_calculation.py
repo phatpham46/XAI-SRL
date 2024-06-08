@@ -1,13 +1,11 @@
 
 import os
 import sys
-from matplotlib import pyplot as plt
-import torch
-import numpy as np 
 from pathlib import Path
-sys.path.append('/kaggle/working/SRLPredictionEasel')
-# sys.path.append('../')
-from SRL.model import multiTaskModel
+from matplotlib import pyplot as plt
+# sys.path.append('/kaggle/working/SRLPredictionEasel')
+sys.path.append('../')
+from infer_pipeline import inferPipeline
 from data_maker import DataMaker
 from data_preparation import * 
 from mlm_utils.transform_func import get_files
@@ -16,29 +14,6 @@ from scipy.stats import spearmanr
 from datetime import datetime
 from logger_ import make_logger
 
-
-def load_params(model_file):
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    
-    # Load finetuned model 
-    loadedDict = torch.load(model_file, map_location=torch.device(device))
-    taskParams = loadedDict['task_params']
-    allParams = {}
-    allParams['task_params'] = taskParams
-    allParams['gpu'] = torch.cuda.is_available()
-    allParams['num_train_steps'] = 10
-    allParams['warmup_steps'] = 0
-    allParams['learning_rate'] = 2e-05
-    allParams['epsilon'] = 1e-8
-
-    # modelName = taskParams.modelType.name.lower()
-    # print("Model Name: ", modelName)
-    # _, _ , tokenizerClass, defaultName = NLP_MODELS[modelName]
-    # configName = taskParams.modelConfig
-    # if configName is None:
-    #     configName = defaultName
-
-    return allParams, loadedDict
 
 def get_word(dataDir, file_name, model, labelRn, wrtDir=None, hasTrueLabels=True, needMetrics=True, is_mask_token=False, del_mask_token=False):
     dataMaker = DataMaker(
@@ -158,7 +133,6 @@ def main():
     parser.add_argument('--del_mask_token', type=bool, default=False )
     args = parser.parse_args()
     
-    
     # setting logging
     now = datetime.now()
     logDir = now.strftime("%d_%m-%H_%M")
@@ -168,17 +142,13 @@ def main():
     logger = make_logger(name = args.log_name, debugMode=True,
                         logFile=os.path.join(logDir, '{}.log'.format(args.log_name)), silent=True)
     logger.info("logger created.")
-
     
-    a = load_params(args.model_path)
-    labelMap = a[0]['task_params'].labelMap['conllsrl']
+
+    pipe = inferPipeline(args.model_path, logger)
+    labelMap = pipe.taskParams.labelMap['conllsrl']
     labelRn = {v:k for k,v in labelMap.items()}
     
-    model = multiTaskModel(a[0])
-    model.load_multi_task_model(a[1])
-    logger.info('saved model loaded with global step {} from {}'.format(model.globalStep,
-                                                                            args.model_path))
-    list_spearmanr_dict = get_comp_each_arg(args.data_mask_dir, args.data_origin_dir, model, labelRn, logger, is_mask_token=args.is_mask_token, del_mask_token=args.del_mask_token)
+    list_spearmanr_dict = get_comp_each_arg(args.data_mask_dir, args.data_origin_dir, pipe.model, labelRn, logger, is_mask_token=args.is_mask_token, del_mask_token=args.del_mask_token)
     
     comp_list = []
     brier_score_list = []
@@ -187,12 +157,12 @@ def main():
             comp_list.append(value['comp'])
             brier_score_list.append(value['brier_score'])
 
-
     corr, p_value  = spearmanr(comp_list, brier_score_list)
     logger.info("Spearman Correlation Coefficient: {}, with p-value {}.".format(corr, p_value))
 
     plot_corr(comp_list, brier_score_list, save_img=True, save_path=os.path.join(logDir, 'img_{}.png'.format(args.log_name)))
     logger.info("Done Visualization.")
+    
 if __name__ == '__main__':
     main()
         

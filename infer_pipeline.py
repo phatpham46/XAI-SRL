@@ -1,18 +1,18 @@
 """
 Pipeline for inference on batch for multi-task
 """
+from datetime import datetime
 from utils.task_utils import TasksParam
 from utils.data_utils import TaskType, ModelType, NLP_MODELS
-from models.eval import evaluate
-from models.model import multiTaskModel
+from SRL.eval import evaluate
+from SRL.model import multiTaskModel
 from data_preparation import * 
-from models.data_manager import allTasksDataset, Batcher, batchUtils
+from SRL.data_manager import allTasksDataset, Batcher, batchUtils
 from torch.utils.data import Dataset, DataLoader, BatchSampler
 import argparse
 import os
 import torch
 import logging
-logger = logging.getLogger("multi_task")
 
 class inferPipeline:
 
@@ -33,7 +33,7 @@ class inferPipeline:
     
     """
 
-    def __init__(self, modelPath, maxSeqLen = 128):
+    def __init__(self, modelPath, logger, maxSeqLen = 128):
 
         device = torch.device('cpu')
         if torch.cuda.is_available():
@@ -54,6 +54,7 @@ class inferPipeline:
             configName = defaultName
         #making tokenizer for model
         self.tokenizer = tokenizerClass.from_pretrained(configName)
+        
         logger.info('{} model tokenizer loaded for config {}'.format(modelName, configName))
     
         allParams = {}
@@ -280,5 +281,4 @@ class inferPipeline:
             
 
             finalOutList = self.format_output(dataList, allIds, allPreds, allScores)
-            #print(finalOutList)
             return finalOutList
