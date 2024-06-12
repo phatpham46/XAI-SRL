@@ -3,13 +3,14 @@ import os
 import sys
 from pathlib import Path
 from matplotlib import pyplot as plt
-# sys.path.append('/kaggle/working/SRLPredictionEasel')
-sys.path.append('../')
+import pandas as pd
+sys.path.append('/kaggle/working/SRLPredictionEasel')
+# sys.path.append('../')
 from infer_pipeline import inferPipeline
 from data_maker import DataMaker
 from data_preparation import * 
 from mlm_utils.transform_func import get_files
-from mlm_utils.metric_func import influence_score, relevance_score, brier_score_multi_class, competence_score, get_idx_arg_preds
+from mlm_utils.metric_func import influence_score, relevance_score, brier_score_multi_class, competence_score, get_idx_arg_preds, corr_inf_lhs
 from scipy.stats import spearmanr
 from datetime import datetime
 from logger_ import make_logger
@@ -44,13 +45,18 @@ def check_arg_change(preds_masked, label):
         
 
 def get_pair_inf_rel(origin, masked, labelMap):
+    '''
+    Calculate influence and relevance score for each sentence in origin and masked data.
+    Save the result in a dictionary with key is the changed argument, value is a list of scores.'''
     comp_dict = {}
+    list_inf_score = []
     for i in range(len(origin['uid'])):
         for j in range(len(masked['uid'])):
             if int(origin['uid'][i]) == int(masked['uid'][j]):
                 
                 changed_args = check_arg_change(masked['pred'][j], masked['label'][j])
                 inf_score, w_inf = influence_score(origin['logitsSoftmax'][i], masked['logitsSoftmax'][j], get_idx_arg_preds(origin['pred'][i], masked['pred'][j]))
+                
                 rel_score, w_rel = relevance_score(origin['logitsSoftmax'][i], masked['logitsSoftmax'][j],labelMap, origin['label'][i], origin['pred'][i], masked['pred'][j])
                 
                 brier_score = (1 - brier_score_multi_class(origin['label'][i], origin['logitsSoftmax'][i], labelMap))
@@ -60,20 +66,20 @@ def get_pair_inf_rel(origin, masked, labelMap):
                         'relevance': sum(rel_score) / sum(w_rel) if sum(w_rel) != 0 else 0,
                         'brier_score': brier_score
                         }
-                
+                list_inf_score.append(score['influence'])
                 # save to comp_dict with key is item in changed_args, value is score
                 for arg in changed_args:
                     if arg not in comp_dict:
                         comp_dict[arg] = []
                     comp_dict[arg].append(score)
            
-    return comp_dict
+    return comp_dict, list_inf_score
 
 
 def get_comp_each_arg(dataMaskedDir, dataOriginDir, model, labelRn, logger, is_mask_token, del_mask_token):
     file_mask = sorted(get_files(dataMaskedDir))
     file_origin = sorted(get_files(dataOriginDir))
-    
+    all_inf_score = []
     list_spearrman_dict = []
     for mask, origin in zip(file_mask, file_origin):
         logger.info("Calculate file {} and {}".format(mask, origin))
@@ -81,8 +87,10 @@ def get_comp_each_arg(dataMaskedDir, dataOriginDir, model, labelRn, logger, is_m
         resultOrigin = get_word(dataOriginDir, origin, model, labelRn, hasTrueLabels=True, needMetrics=False)
 
         labelMap = {v: k for k, v in labelRn.items()}
-        comp_score = get_pair_inf_rel(resultOrigin, resultwordMasked, labelMap)
-       
+        comp_score, list_inf_score = get_pair_inf_rel(resultOrigin, resultwordMasked, labelMap)
+        
+        
+        all_inf_score.extend(list_inf_score)
         spearmanr_dict = {}
         for key, value in comp_score.items():
             logger.info("key: {} has {} sentences, competence {}, brier_score_loss {}, with p-value {}." \
@@ -92,7 +100,8 @@ def get_comp_each_arg(dataMaskedDir, dataOriginDir, model, labelRn, logger, is_m
                                    'brier_score': competence_score(value)[2]}
         logger.info("-------------------------------------------------")
         list_spearrman_dict.append(spearmanr_dict)
-    return list_spearrman_dict
+        break
+    return list_spearrman_dict, all_inf_score
 
 # using plot to visualize the result
 def plot_corr(comp_list, brier_score_list, save_img=False, save_path=None):
@@ -144,24 +153,40 @@ def main():
     logger.info("logger created.")
     
 
-    pipe = inferPipeline(args.model_path, logger)
+    pipe = inferPipeline(logger, args.model_path)
     labelMap = pipe.taskParams.labelMap['conllsrl']
     labelRn = {v:k for k,v in labelMap.items()}
     
-    list_spearmanr_dict = get_comp_each_arg(args.data_mask_dir, args.data_origin_dir, pipe.model, labelRn, logger, is_mask_token=args.is_mask_token, del_mask_token=args.del_mask_token)
+    list_spearmanr_dict, all_inf_score = get_comp_each_arg(args.data_mask_dir, args.data_origin_dir, pipe.model, labelRn, logger, is_mask_token=args.is_mask_token, del_mask_token=args.del_mask_token)
     
-    comp_list = []
-    brier_score_list = []
-    for entry in list_spearmanr_dict:
-        for key, value in entry.items():
-            comp_list.append(value['comp'])
-            brier_score_list.append(value['brier_score'])
+    # # Task 1.2: correlation between competence and brier score
+    # comp_list = []
+    # brier_score_list = []
+    # for entry in list_spearmanr_dict:
+    #     for key, value in entry.items():
+    #         comp_list.append(value['comp'])
+    #         brier_score_list.append(value['brier_score'])
 
-    corr, p_value  = spearmanr(comp_list, brier_score_list)
-    logger.info("Spearman Correlation Coefficient: {}, with p-value {}.".format(corr, p_value))
+    # corr, p_value  = spearmanr(comp_list, brier_score_list)
+    # logger.info("Spearman Correlation Coefficient: {}, with p-value {}.".format(corr, p_value))
 
-    plot_corr(comp_list, brier_score_list, save_img=True, save_path=os.path.join(logDir, 'img_{}.png'.format(args.log_name)))
-    logger.info("Done Visualization.")
+    # plot_corr(comp_list, brier_score_list, save_img=True, save_path=os.path.join(logDir, 'img_{}.png'.format(args.log_name)))
+    # logger.info("Done Visualization.")
+    
+    
+    # Task 1.1: correlation between inf and lhs 
+    lhs = pd.read_csv('./data_mlm/process_folder/cosine_similarity/mlm_abolish_full_cos_sim.csv')
+    print("lhs shape: ", lhs.shape)
+    print("all_inf_score shape: ", len(all_inf_score))
+    print("all_inf_score shape: ", len(all_inf_score[0]))
+    print("all_inf_score[0] shape: ", all_inf_score[0])
+    
+    assert len(all_inf_score[0]) == len(lhs), 'Length of inf_score and lhs must be the same.'
+    
+    corr, p_value = corr_inf_lhs(all_inf_score[0], lhs['cos_diff'])
+    print("correlation between inf and lhs: {}, with p-value: {}".format(corr, p_value))
+    
+   
     
 if __name__ == '__main__':
     main()

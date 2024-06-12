@@ -4,7 +4,8 @@ from sklearn.preprocessing import label_binarize
 import numpy as np
 from scipy.stats import spearmanr
 from mlm_utils.transform_func import get_idx_arg_preds
-
+import operator
+import torch
 def cosine_sim(a, b):
     '''
     Function to calculate cosine similarity between two vectors.
@@ -16,7 +17,20 @@ def cosine_sim(a, b):
             
     return round(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)), 5)
 
+# def cos_tensor(t1, t2):
+    
+#     if not isinstance(torch.Tensor):
+#         t1 = torch.tensor(t1)
+#     if not isinstance(torch.Tensor):
+#         t2 = torch.tensor(t2)
 
+#     cos_func = torch.nn.CosineSimilarity(dim=0)
+#     return cos_func(t1, t2)
+        
+# def cos_mo_tensor(t1, t2, cos):
+    
+   
+    
 def cosine_module(a, b, cosine_sum):
     '''
     Function to calculate cosine similarity between two vectors
@@ -28,6 +42,16 @@ def cosine_module(a, b, cosine_sum):
     
     return round(module_similarity * cosine_sum, 5)
 
+def ele_wise_sub(a, b):
+    '''
+    Function to calculate element-wise subtraction between two vectors.
+    '''
+    if not isinstance(a, list):
+        a = ast.literal_eval(a)
+    if not isinstance(b, list):
+        b = ast.literal_eval(b)
+    diff =  list(map(operator.sub, a, b))   
+    return round(sum(diff) / len(diff), 5)
 
 def influence_score(outLogitsSigmoid_original, outLogitsSigmoid_meddle, list_arg_change):
     influence_score = []
@@ -131,3 +155,10 @@ def competence_score(comp):
     # get brier score for each unique uid in comp
     brier_score = np.mean([item['brier_score'] for item in comp])
     return round(correlation_coefficient, 4), round(p_value, 4), round(brier_score, 4)
+
+def corr_inf_lhs(comp, lhs):
+    inf = [abs(item['influence']) for item in comp]
+    lhs = [item for item in lhs]
+    
+    corr, p_value = spearmanr(inf, lhs)
+    return round(corr, 4), round(p_value, 4)

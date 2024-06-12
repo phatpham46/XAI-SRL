@@ -10,9 +10,7 @@ from mlm_utils.transform_func import get_files
 import multiprocessing as mp
 import dask
 from dask.delayed import delayed
-# def read_data(readPath):
-#     df = pd.read_json(readPath, lines=True)
-#     return df
+
 
 def read_data_dask(readPath):
     df = dd.read_json(readPath, lines=True)

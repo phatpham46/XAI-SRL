@@ -2,10 +2,12 @@
 Pipeline for inference on batch for multi-task
 """
 from datetime import datetime
+from MLM.mlm_utils.pertured_dataset import PerturbedDataset
 from utils.task_utils import TasksParam
 from utils.data_utils import TaskType, ModelType, NLP_MODELS
 from SRL.eval import evaluate
 from SRL.model import multiTaskModel
+from transformers import BertModel, BertTokenizer
 from data_preparation import * 
 from SRL.data_manager import allTasksDataset, Batcher, batchUtils
 from torch.utils.data import Dataset, DataLoader, BatchSampler
@@ -33,7 +35,7 @@ class inferPipeline:
     
     """
 
-    def __init__(self, modelPath, logger, maxSeqLen = 128):
+    def __init__(self, logger, modelPath=None, maxSeqLen = 85):
 
         device = torch.device('cpu')
         if torch.cuda.is_available():
@@ -41,34 +43,38 @@ class inferPipeline:
 
         self.maxSeqLen = maxSeqLen
         self.modelPath = modelPath
-        assert os.path.exists(self.modelPath), "saved model not present at {}".format(self.modelPath)
-
-        loadedDict = torch.load(self.modelPath, map_location=device)
-        self.taskParams = loadedDict['task_params']
-        logger.info('Task Params loaded from saved model.')
-
-        modelName = self.taskParams.modelType.name.lower()
-        _, _ , tokenizerClass, defaultName = NLP_MODELS[modelName]
-        configName = self.taskParams.modelConfig
-        if configName is None:
-            configName = defaultName
-        #making tokenizer for model
-        self.tokenizer = tokenizerClass.from_pretrained(configName)
         
-        logger.info('{} model tokenizer loaded for config {}'.format(modelName, configName))
-    
-        allParams = {}
-        allParams['task_params'] = self.taskParams
-        allParams['gpu'] = torch.cuda.is_available()
-        # dummy values
-        allParams['num_train_steps'] = 10
-        allParams['warmup_steps'] = 0
-        allParams['learning_rate'] = 2e-5
-        allParams['epsilon'] = 1e-8
+        if self.modelPath is not None and os.path.exists(self.modelPath):
 
-        #making and loading model
-        self.model = multiTaskModel(allParams)
-        self.model.load_multi_task_model(loadedDict)
+            loadedDict = torch.load(self.modelPath, map_location=device)
+            self.taskParams = loadedDict['task_params']
+            logger.info('Task Params loaded from saved model.')
+
+            modelName = self.taskParams.modelType.name.lower()
+            _, _ , tokenizerClass, defaultName = NLP_MODELS[modelName]
+            configName = self.taskParams.modelConfig
+            if configName is None:
+                configName = defaultName
+            #making tokenizer for model
+            self.tokenizer = tokenizerClass.from_pretrained(configName)
+            
+            logger.info('{} model tokenizer loaded for config {}'.format(modelName, configName))
+        
+            allParams = {}
+            allParams['task_params'] = self.taskParams
+            allParams['gpu'] = torch.cuda.is_available()
+            # dummy values
+            allParams['num_train_steps'] = 10
+            allParams['warmup_steps'] = 0
+            allParams['learning_rate'] = 2e-5
+            allParams['epsilon'] = 1e-8
+
+            #making and loading model
+            self.model = multiTaskModel(allParams)
+            self.model.load_multi_task_model(loadedDict)
+        else:
+            self.model = BertModel.from_pretrained('dmis-lab/biobert-base-cased-v1.2', output_hidden_states =True)
+            self.tokenizer = BertTokenizer.from_pretrained('dmis-lab/biobert-base-cased-v1.2')
 
     def make_feature_samples(self, dataList, taskType, taskName):
         allData = []
@@ -158,7 +164,7 @@ class inferPipeline:
                 if taskType == TaskType.NER:
                     result = allPreds[i][sampleId]
                     inpp = dataList[sampleId][0].split()
-                    #print("{} : ".format(taskName))
+                   
                     result = self.format_ner_output(inpp, result)
                 else:
                     result = [allPreds[i][sampleId], allScores[i][sampleId]]
@@ -171,114 +177,124 @@ class inferPipeline:
         return returnList
                 
 
-    def infer(self, dataList, taskNamesList, batchSize = 8, seed=42):
+    # def infer(self, dataList, taskNamesList, batchSize = 8, seed=42):
 
-        """
-        This is the function which can be called to get the predictions for input samples
-        for the mentioned tasks.
+    #     """
+    #     This is the function which can be called to get the predictions for input samples
+    #     for the mentioned tasks.
 
-        - Samples can be packed in a ``list of lists`` manner as the function processes inputs in batch.
-        - In case, an input sample requires sentence pair, the two sentences can be kept as elements of the list.
-        - In case of single sentence classification or NER tasks, only the first element of a sample will be used.
-        - For NER, the infer function automatically splits the sentence into tokens.
-        - All the tasks mentioned in ``taskNamesList`` are performed for all the input samples.
+    #     - Samples can be packed in a ``list of lists`` manner as the function processes inputs in batch.
+    #     - In case, an input sample requires sentence pair, the two sentences can be kept as elements of the list.
+    #     - In case of single sentence classification or NER tasks, only the first element of a sample will be used.
+    #     - For NER, the infer function automatically splits the sentence into tokens.
+    #     - All the tasks mentioned in ``taskNamesList`` are performed for all the input samples.
 
-        Args:
+    #     Args:
 
-            dataList (:obj:`list of lists`) : A batch of input samples. For eg.
+    #         dataList (:obj:`list of lists`) : A batch of input samples. For eg.
                 
-                [
-                    [<sentenceA>, <sentenceB>],
+    #             [
+    #                 [<sentenceA>, <sentenceB>],
                     
-                    [<sentenceA>, <sentenceB>],
+    #                 [<sentenceA>, <sentenceB>],
 
-                ]
+    #             ]
 
-                or in case all the tasks just require single sentence inputs,
+    #             or in case all the tasks just require single sentence inputs,
                 
-                [
-                    [<sentenceA>],
+    #             [
+    #                 [<sentenceA>],
 
-                    [<sentenceA>],
+    #                 [<sentenceA>],
 
-                ]
+    #             ]
 
-            taskNamesList (:obj:`list`) : List of tasks to be performed on dataList samples. For eg.
+    #         taskNamesList (:obj:`list`) : List of tasks to be performed on dataList samples. For eg.
 
-                ['TaskA', 'TaskB', 'TaskC']
+    #             ['TaskA', 'TaskB', 'TaskC']
 
-                You can choose the tasks you want to infer. For eg.
+    #             You can choose the tasks you want to infer. For eg.
 
-                ['TaskB']
+    #             ['TaskB']
 
-            batchSize (:obj:`int`, defaults to :obj:`8`) : Batch size for running inference.
+    #         batchSize (:obj:`int`, defaults to :obj:`8`) : Batch size for running inference.
 
 
-        Return:
+    #     Return:
 
-            outList (:obj:`list of objects`) :
-                List of dictionary objects where each object contains one corresponding input sample and it's tasks outputs. The task outputs
-                can also contain the confidence scores. For eg.
+    #         outList (:obj:`list of objects`) :
+    #             List of dictionary objects where each object contains one corresponding input sample and it's tasks outputs. The task outputs
+    #             can also contain the confidence scores. For eg.
 
-                [
-                    {'Query' : [<sentence>],
+    #             [
+    #                 {'Query' : [<sentence>],
 
-                    'TaskA' : <TaskA output>,
+    #                 'TaskA' : <TaskA output>,
 
-                    'TaskB' : <TaskB output>,
+    #                 'TaskB' : <TaskB output>,
 
-                    'TaskC' : <TaskC output>},
+    #                 'TaskC' : <TaskC output>},
 
-                ]
+    #             ]
 
-        Example::
+    #     Example::
 
-            >>> samples = [ ['sample_sentence_1'], ['sample_sentence_2'] ]
-            >>> tasks = ['TaskA', 'TaskB']
-            >>> pipe.infer(samples, tasks)
+    #         >>> samples = [ ['sample_sentence_1'], ['sample_sentence_2'] ]
+    #         >>> tasks = ['TaskA', 'TaskB']
+    #         >>> pipe.infer(samples, tasks)
 
-        """
+    #     """
        
-        allTasksList = []
-        for taskName in taskNamesList:
-            print("taskName : ", self.taskParams.taskIdNameMap.values())
-            assert taskName in self.taskParams.taskIdNameMap.values(), "task Name not in task names for loaded model"
-            taskId = [taskId for taskId, tName in self.taskParams.taskIdNameMap.items() if tName==taskName][0]
-            taskType = self.taskParams.taskTypeMap[taskName]
+    #     allTasksList = []
+    #     for taskName in taskNamesList:
+    #         print("taskName : ", self.taskParams.taskIdNameMap.values())
+    #         assert taskName in self.taskParams.taskIdNameMap.values(), "task Name not in task names for loaded model"
+    #         taskId = [taskId for taskId, tName in self.taskParams.taskIdNameMap.items() if tName==taskName][0]
+    #         taskType = self.taskParams.taskTypeMap[taskName]
 
-            taskData = self.make_feature_samples(dataList, taskType, taskName)
+    #         taskData = self.make_feature_samples(dataList, taskType, taskName)
           
 
-            tasksDict = {"data_task_id" : int(taskId),
-                        "data_" : taskData,
-                        "data_task_type" : taskType,
-                        "data_task_name" : taskName}
-            allTasksList.append(tasksDict)
-        print("allTasksList : ", allTasksList)
+    #         tasksDict = {"data_task_id" : int(taskId),
+    #                     "data_" : taskData,
+    #                     "data_task_type" : taskType,
+    #                     "data_task_name" : taskName}
+    #         allTasksList.append(tasksDict)
+    #     print("allTasksList : ", allTasksList)
         
-        allData = allTasksDataset(allTasksList, pipeline=True)
+    #     allData = allTasksDataset(allTasksList, pipeline=True)
         
         
-        batchSampler = Batcher(allData, batchSize=batchSize, seed =seed,
-                             shuffleBatch=False, shuffleTask=False)
-        # VERY IMPORTANT TO TURN OFF BATCH SHUFFLE IN INFERENCE. ELSE PREDICTION SCORES
-        # WILL GET JUMBLED
+    #     batchSampler = Batcher(allData, batchSize=batchSize, seed =seed,
+    #                          shuffleBatch=False, shuffleTask=False)
+    #     # VERY IMPORTANT TO TURN OFF BATCH SHUFFLE IN INFERENCE. ELSE PREDICTION SCORES
+    #     # WILL GET JUMBLED
 
-        batchSamplerUtils = batchUtils(isTrain = False, modelType= self.taskParams.modelType,
-                                  maxSeqLen = self.maxSeqLen)
-        inferDataLoader = DataLoader(allData, batch_sampler=batchSampler,
-                                    collate_fn=batchSamplerUtils.collate_fn,
-                                    pin_memory=torch.cuda.is_available())
-        print("inferDataLoader : ", inferDataLoader)
-        with torch.no_grad():
-            allIds, allPreds, allScores = evaluate(allData, batchSampler, inferDataLoader, self.taskParams,
-                    self.model, gpu=torch.cuda.is_available(), evalBatchSize=batchSize, needMetrics=False, hasTrueLabels=False,
-                    returnPred=True)
+    #     batchSamplerUtils = batchUtils(isTrain = False, modelType= self.taskParams.modelType,
+    #                               maxSeqLen = self.maxSeqLen)
+    #     inferDataLoader = DataLoader(allData, batch_sampler=batchSampler,
+    #                                 collate_fn=batchSamplerUtils.collate_fn,
+    #                                 pin_memory=torch.cuda.is_available())
+    #     print("inferDataLoader : ", inferDataLoader)
+    #     with torch.no_grad():
+    #         allIds, allPreds, allScores = evaluate(allData, batchSampler, inferDataLoader, self.taskParams,
+    #                 self.model, gpu=torch.cuda.is_available(), evalBatchSize=batchSize, needMetrics=False, hasTrueLabels=False,
+    #                 returnPred=True)
 
-            print("allIds : ", allIds)
-            print("allPreds : ", allPreds)
-            print("allScores : ", allScores)
+    #         print("allIds : ", allIds)
+    #         print("allPreds : ", allPreds)
+    #         print("allScores : ", allScores)
             
 
-            finalOutList = self.format_output(dataList, allIds, allPreds, allScores)
-            return finalOutList
+    #         finalOutList = self.format_output(dataList, allIds, allPreds, allScores)
+    #         return finalOutList
+
+    def infer(self, dataDir, file, batch_size = 32, device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu") ):
+        dataset = PerturbedDataset(
+                        file_name=dataDir/file,
+                        device = device)
+
+        dataloader = dataset.generate_batches(
+                        dataset= dataset,
+                        batch_size=batch_size)
+        self.dataloader = dataloader
