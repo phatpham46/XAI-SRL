@@ -75,6 +75,7 @@ class inferPipeline:
         else:
             self.model = BertModel.from_pretrained('dmis-lab/biobert-base-cased-v1.2', output_hidden_states =True)
             self.tokenizer = BertTokenizer.from_pretrained('dmis-lab/biobert-base-cased-v1.2')
+            logger.info('BioBERT model loaded.')
 
     def make_feature_samples(self, dataList, taskType, taskName):
         allData = []

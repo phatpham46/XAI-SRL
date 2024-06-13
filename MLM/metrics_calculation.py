@@ -49,7 +49,7 @@ def get_pair_inf_rel(origin, masked, labelMap):
     Calculate influence and relevance score for each sentence in origin and masked data.
     Save the result in a dictionary with key is the changed argument, value is a list of scores.'''
     comp_dict = {}
-    list_inf_score = []
+    list_comp_score = []
     for i in range(len(origin['uid'])):
         for j in range(len(masked['uid'])):
             if int(origin['uid'][i]) == int(masked['uid'][j]):
@@ -66,20 +66,20 @@ def get_pair_inf_rel(origin, masked, labelMap):
                         'relevance': sum(rel_score) / sum(w_rel) if sum(w_rel) != 0 else 0,
                         'brier_score': brier_score
                         }
-                list_inf_score.append(score['influence'])
+                list_comp_score.append(score)
                 # save to comp_dict with key is item in changed_args, value is score
                 for arg in changed_args:
                     if arg not in comp_dict:
                         comp_dict[arg] = []
                     comp_dict[arg].append(score)
            
-    return comp_dict, list_inf_score
+    return comp_dict, list_comp_score
 
 
 def get_comp_each_arg(dataMaskedDir, dataOriginDir, model, labelRn, logger, is_mask_token, del_mask_token):
     file_mask = sorted(get_files(dataMaskedDir))
     file_origin = sorted(get_files(dataOriginDir))
-    all_inf_score = []
+    all_comp_score = []
     list_spearrman_dict = []
     for mask, origin in zip(file_mask, file_origin):
         logger.info("Calculate file {} and {}".format(mask, origin))
@@ -87,10 +87,10 @@ def get_comp_each_arg(dataMaskedDir, dataOriginDir, model, labelRn, logger, is_m
         resultOrigin = get_word(dataOriginDir, origin, model, labelRn, hasTrueLabels=True, needMetrics=False)
 
         labelMap = {v: k for k, v in labelRn.items()}
-        comp_score, list_inf_score = get_pair_inf_rel(resultOrigin, resultwordMasked, labelMap)
+        comp_score, list_comp_score = get_pair_inf_rel(resultOrigin, resultwordMasked, labelMap)
         
         
-        all_inf_score.extend(list_inf_score)
+        all_comp_score.extend(list_comp_score)
         spearmanr_dict = {}
         for key, value in comp_score.items():
             logger.info("key: {} has {} sentences, competence {}, brier_score_loss {}, with p-value {}." \
@@ -100,8 +100,8 @@ def get_comp_each_arg(dataMaskedDir, dataOriginDir, model, labelRn, logger, is_m
                                    'brier_score': competence_score(value)[2]}
         logger.info("-------------------------------------------------")
         list_spearrman_dict.append(spearmanr_dict)
-        break
-    return list_spearrman_dict, all_inf_score
+        
+    return list_spearrman_dict, all_comp_score
 
 # using plot to visualize the result
 def plot_corr(comp_list, brier_score_list, save_img=False, save_path=None):
@@ -173,21 +173,7 @@ def main():
     # plot_corr(comp_list, brier_score_list, save_img=True, save_path=os.path.join(logDir, 'img_{}.png'.format(args.log_name)))
     # logger.info("Done Visualization.")
     
-    
-    # Task 1.1: correlation between inf and lhs 
-    lhs = pd.read_csv('./data_mlm/process_folder/cosine_similarity/mlm_abolish_full_cos_sim.csv')
-    print("lhs shape: ", lhs.shape)
-    print("all_inf_score shape: ", len(all_inf_score))
-    print("all_inf_score shape: ", len(all_inf_score[0]))
-    print("all_inf_score[0] shape: ", all_inf_score[0])
-    
-    assert len(all_inf_score[0]) == len(lhs), 'Length of inf_score and lhs must be the same.'
-    
-    corr, p_value = corr_inf_lhs(all_inf_score[0], lhs['cos_diff'])
-    print("correlation between inf and lhs: {}, with p-value: {}".format(corr, p_value))
-    
-   
-    
+
 if __name__ == '__main__':
     main()
         
