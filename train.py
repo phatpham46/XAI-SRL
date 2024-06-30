@@ -683,17 +683,7 @@ def main():
                 evaluate(allDataBegin_test, BatchSamplerBegin_test, multiTaskDataLoaderBegin_test, taskParams,
                     model, gpu=allParams['gpu'],evalBatchSize=args.eval_batch_size, hasTrueLabels=True, needMetrics=True)
                 
-            #Begin 2 7 8
-            logger.info("\nRunning Evaluation on Begin 2 dev...")
-            with torch.no_grad():
-                evaluate(allDataBegin2_dev, BatchSamplerBegin2_dev, multiTaskDataLoaderBegin2_dev, taskParams,
-                    model, gpu=allParams['gpu'],evalBatchSize=args.eval_batch_size, hasTrueLabels=True, needMetrics=True)
-            
-            logger.info("\nRunning Evaluation on Begin 2 test...")
-            with torch.no_grad():
-                evaluate(allDataBegin2_test, BatchSamplerBegin2_test, multiTaskDataLoaderBegin2_test, taskParams,
-                    model, gpu=allParams['gpu'],evalBatchSize=args.eval_batch_size, hasTrueLabels=True, needMetrics=True)
-
+        
             #Block 9 10
             logger.info("\nRunning Evaluation on Block dev...")
             with torch.no_grad():
@@ -738,17 +728,7 @@ def main():
                 evaluate(allDataDecrease_test, BatchSamplerDecrease_test, multiTaskDataLoaderDecrease_test, taskParams,
                     model, gpu=allParams['gpu'],evalBatchSize=args.eval_batch_size, hasTrueLabels=True, needMetrics=True)
                 
-            #Decrease 2 15 16
-            logger.info("\nRunning Evaluation on Decrease 2 dev...")
-            with torch.no_grad():
-                evaluate(allDataDecrease2_dev, BatchSamplerDecrease2_dev, multiTaskDataLoaderDecrease2_dev, taskParams,
-                    model, gpu=allParams['gpu'],evalBatchSize=args.eval_batch_size, hasTrueLabels=True, needMetrics=True)
-            
-            logger.info("\nRunning Evaluation on Decrease 2 test...")
-            with torch.no_grad():
-                evaluate(allDataDecrease2_test, BatchSamplerDecrease2_test, multiTaskDataLoaderDecrease2_test, taskParams,
-                    model, gpu=allParams['gpu'],evalBatchSize=args.eval_batch_size, hasTrueLabels=True, needMetrics=True)
-            
+        
             #Delete 17 18
             logger.info("\nRunning Evaluation on Delete dev...")
             with torch.no_grad():
@@ -947,17 +927,7 @@ def main():
                 evaluate(allDataSplice_test, BatchSamplerSplice_test, multiTaskDataLoaderSplice_test, taskParams,
                     model, gpu=allParams['gpu'],evalBatchSize=args.eval_batch_size, hasTrueLabels=True, needMetrics=True)
             
-            #Splice 2 51 52
-            logger.info("\nRunning Evaluation on Splice 2 dev...")
-            with torch.no_grad():
-                evaluate(allDataSplice2_dev, BatchSamplerSplice2_dev, multiTaskDataLoaderSplice2_dev, taskParams,
-                    model, gpu=allParams['gpu'],evalBatchSize=args.eval_batch_size, hasTrueLabels=True, needMetrics=True)
-            
-            logger.info("\nRunning Evaluation on Splice 2 test...")
-            with torch.no_grad():
-                evaluate(allDataSplice2_test, BatchSamplerSplice2_test, multiTaskDataLoaderSplice2_test, taskParams,
-                    model, gpu=allParams['gpu'],evalBatchSize=args.eval_batch_size, hasTrueLabels=True, needMetrics=True)
-
+          
             #Transcribe 53 54
             logger.info("\nRunning Evaluation on Transcribe dev...")
             with torch.no_grad():
@@ -980,17 +950,6 @@ def main():
                 evaluate(allDataTransform_test, BatchSamplerTransform_test, multiTaskDataLoaderTransform_test, taskParams,
                     model, gpu=allParams['gpu'],evalBatchSize=args.eval_batch_size, hasTrueLabels=True, needMetrics=True)
                 
-            #Transform 55 56
-            logger.info("\nRunning Evaluation on Transform 2 dev...")
-            with torch.no_grad():
-                evaluate(allDataTransform2_dev, BatchSamplerTransform2_dev, multiTaskDataLoaderTransform2_dev, taskParams,
-                    model, gpu=allParams['gpu'],evalBatchSize=args.eval_batch_size, hasTrueLabels=True, needMetrics=True)
-            
-            logger.info("\nRunning Evaluation on Transform  2 test...")
-            with torch.no_grad():
-                evaluate(allDataTransform2_test, BatchSamplerTransform2_test, multiTaskDataLoaderTransform2_test, taskParams,
-                    model, gpu=allParams['gpu'],evalBatchSize=args.eval_batch_size, hasTrueLabels=True, needMetrics=True)
-
             #Translate 57 58
             logger.info("\nRunning Evaluation on Translate dev...")
             with torch.no_grad():
@@ -1002,28 +961,7 @@ def main():
                 evaluate(allDataTranslate_test, BatchSamplerTranslate_test, multiTaskDataLoaderTranslate_test, taskParams,
                     model, gpu=allParams['gpu'],evalBatchSize=args.eval_batch_size, hasTrueLabels=True, needMetrics=True)
                 
-            #Translate 2 57 58
-            logger.info("\nRunning Evaluation on Translate 2 dev...")
-            with torch.no_grad():
-                evaluate(allDataTranslate2_dev, BatchSamplerTranslate2_dev, multiTaskDataLoaderTranslate2_dev, taskParams,
-                    model, gpu=allParams['gpu'],evalBatchSize=args.eval_batch_size, hasTrueLabels=True, needMetrics=True)
-            
-            logger.info("\nRunning Evaluation on Translate 2 test...")
-            with torch.no_grad():
-                evaluate(allDataTranslate2_test, BatchSamplerTranslate2_test, multiTaskDataLoaderTranslate2_test, taskParams,
-                    model, gpu=allParams['gpu'],evalBatchSize=args.eval_batch_size, hasTrueLabels=True, needMetrics=True)
-                
-            #Translate 3 57 58
-            logger.info("\nRunning Evaluation on Translate 3 dev...")
-            with torch.no_grad():
-                evaluate(allDataTranslate3_dev, BatchSamplerTranslate3_dev, multiTaskDataLoaderTranslate3_dev, taskParams,
-                    model, gpu=allParams['gpu'],evalBatchSize=args.eval_batch_size, hasTrueLabels=True, needMetrics=True)
-            
-            logger.info("\nRunning Evaluation on Translate 3 test...")
-            with torch.no_grad():
-                evaluate(allDataTranslate3_test, BatchSamplerTranslate3_test, multiTaskDataLoaderTranslate3_test, taskParams,
-                    model, gpu=allParams['gpu'],evalBatchSize=args.eval_batch_size, hasTrueLabels=True, needMetrics=True)
-
+        
             #Truncate 59 60
             logger.info("\nRunning Evaluation on Truncate dev...")
             with torch.no_grad():
