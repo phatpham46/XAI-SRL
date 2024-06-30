@@ -2,14 +2,14 @@ conllsrl:
   model_type: BERT
   config_name: dmis-lab/biobert-base-cased-v1.2  #bert-base-uncased
   dropout_prob: 0.2
-  label_map_or_file: ./data/coNLL_tsv/ner_coNLL_train_label_map.joblib
+  # label_map_or_file: ./data/coNLL_tsv/ner_coNLL_train_label_map.joblib
   # label_map_or_file: /content/drive/MyDrive/ColabNotebooks/SRL_data/coNLL_tsv/ner_coNLL_train_label_map.joblib
-  # label_map_or_file: /kaggle/input/srl-data/ner_coNLL_train_label_map.joblib 
+  label_map_or_file: /kaggle/input/srl-data/ner_coNLL_train_label_map.joblib 
   metrics:
   - seqeval_f1_score
   - seqeval_precision
   - seqeval_recall
-  - brier_score
+  # - brier_score
   loss_type: NERLoss
   task_type: NER
   file_names:
