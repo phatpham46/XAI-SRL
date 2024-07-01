@@ -228,7 +228,7 @@ class multiTaskModel:
             self.scheduler.step()
 
             self.optimizer.zero_grad()
-            self.globalStep += 1
+            # self.globalStep += 1
            
             # reset accumulated steps
             self.accumulatedStep = 0

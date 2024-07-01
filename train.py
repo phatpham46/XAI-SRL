@@ -152,7 +152,6 @@ def make_data_handlers(taskParams, mode, isTrain, gpu):
     allTaskslist = []
     for taskId, taskName in taskParams.taskIdNameMap.items():
         taskType = taskParams.taskTypeMap[taskName]
-        # print("train.py taskType:", taskType)
         if mode == "test":
             assert len(taskParams.fileNamesMap[taskName])!=100, "test file is required along with train, dev"
         #dataFileName =  '{}.json'.format(taskParams.fileNamesMap[taskName][modeIdx].split('.')[0])
@@ -168,11 +167,8 @@ def make_data_handlers(taskParams, mode, isTrain, gpu):
     allData = allTasksDataset(allTaskslist)
    
     if mode == "train":
-        #print("train.py mode:", mode)
         batchSize = args.train_batch_size
-        #print("train.py train batchSize:", batchSize)
     else:
-        #print("train.py mode eval:", mode)
         batchSize = args.eval_batch_size
 
     batchSampler = Batcher(allData, batchSize=batchSize, seed = args.seed)
@@ -546,6 +542,7 @@ def main():
 
     #making multi-task model 
     allParams['num_train_steps'] = math.ceil(len(multiTaskDataLoaderTrain)/args.train_batch_size) *args.epochs // args.grad_accumulation_steps
+    
     allParams['warmup_steps'] = args.num_of_warmup_steps
     allParams['learning_rate'] = args.learning_rate
     allParams['epsilon'] = args.epsilon
@@ -555,9 +552,7 @@ def main():
     logger.info("Making multi-task model...")
     model = multiTaskModel(allParams)
     print(model)
-    #logger.info('################ Network ###################')
-    #logger.info('\n{}\n'.format(model.network))
-
+    
     if args.load_saved_model:
         if args.finetune is True:
             model.load_shared_model(loadedDict, args.freeze_shared_model)
@@ -569,7 +564,9 @@ def main():
                                                                             args.load_saved_model))
         if args.resume_train:
             logger.info("Resuming training from global step {}. Steps before it will be skipped".format(model.globalStep))
-
+        
+    globalStep = 0    
+    check_point = model.globalStep
     # training 
     resCnt = 0
     for epoch in range(args.epochs):
@@ -583,7 +580,7 @@ def main():
             for i, (batchMetaData, batchData) in enumerate(multiTaskDataLoaderTrain):
                 batchMetaData, batchData = BatchSamplerTrain.patch_data(batchMetaData,batchData, gpu = allParams['gpu'])
                 
-                if args.resume_train and args.load_saved_model and resCnt*args.grad_accumulation_steps < model.globalStep:
+                if args.resume_train and args.load_saved_model and resCnt*args.grad_accumulation_steps <= check_point:
                     '''
                     NOTE: - Resume function is only to be used in case the training process couldnt
                     complete or you wish to extend the training to some more epochs.
@@ -599,13 +596,8 @@ def main():
                 if model.globalStep % args.log_per_updates == 0 and (model.accumulatedStep+1 == args.grad_accumulation_steps):
                     taskId = batchMetaData['task_id']
                     taskName = taskParams.taskIdNameMap[taskId]
-                    #avgLoss = totalEpochLoss / ((i+1)*args.train_batch_size)
                     avgLoss = totalEpochLoss / (i+1)
-                    # logger.info('Steps: {} Task: {} Avg.Loss: {} Task Loss: {}'.format(model.globalStep,
-                    #                                                                 taskName,
-                    #                                                                 avgLoss,
-                    #                                                                 model.taskLoss.item()))
-                    
+                   
                     tensorboard.add_scalar('train/avg_loss', avgLoss, global_step= model.globalStep)
                     tensorboard.add_scalar('train/{}_loss'.format(taskName),
                                             model.taskLoss.item(),
@@ -615,7 +607,7 @@ def main():
                     savePath = os.path.join(args.out_dir, 'multi_task_model_{}_{}.pt'.format(epoch,
                                                                                             model.globalStep))
                     model.save_multi_task_model(savePath)
-
+                    
                     # limiting the checkpoints save, remove checkpoints if beyond limit
                     if args.limit_save > 0:
                         stepCkpMap = {int(ckp.rstrip('.pt').split('_')[-1]) : ckp for ckp in os.listdir(args.out_dir) if ckp.endswith('.pt') }
@@ -628,13 +620,18 @@ def main():
                             logger.info('Removing checkpoint {}'.format(stepCkpMap[ckpStep]))
 
                 progress.update(1)
-
+            globalStep += int(tt/args.grad_accumulation_steps)
+          
             #saving model after epoch
-            if args.resume_train and args.load_saved_model and resCnt*args.grad_accumulation_steps < model.globalStep:
+            if args.resume_train and args.load_saved_model and resCnt*args.grad_accumulation_steps <= check_point:
+                
                 pass
             else:
+                model.globalStep = globalStep
+            
                 savePath = os.path.join(args.out_dir, 'multi_task_model_{}_{}.pt'.format(epoch, model.globalStep))  
                 model.save_multi_task_model(savePath)
+                
 
             if args.eval_while_train:
                 logger.info("\nRunning Evaluation on dev...")
