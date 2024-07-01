@@ -4,8 +4,8 @@ from utils.data_utils import METRICS, TaskType
 import math
 import os
 from tqdm import tqdm
-# logger = logging.getLogger("multi_task")
-logger = logging.getLogger("evaluate_brier_score")
+logger = logging.getLogger("multi_task")
+# logger = logging.getLogger("evaluate_brier_score")
 def evaluate(dataSet, batchSampler, dataLoader, taskParams,
             model, gpu, evalBatchSize, needMetrics, hasTrueLabels,
             wrtDir=None, wrtPredPath = None, returnPred=False):
