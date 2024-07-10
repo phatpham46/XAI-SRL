@@ -109,16 +109,11 @@ def get_comp_each_arg(dataMaskedDir, dataOriginDir, model, labelRn, logger, wriD
 def plot_corr(comp_list, brier_score_list, save_img=False, save_path=None):
     
     plt.scatter(comp_list, brier_score_list)
-    plt.xlim(-1, 1)
-    plt.ylim(0, 1)
+   
     plt.xlabel('Competence')
     plt.ylabel('Brier Score')
     plt.title('Correlation between Competence vs Brier Score')
-    
-    # Thêm trục phân cách (trục x và y đi qua điểm (0, 0))
-    plt.axhline(y=0, color='k', linestyle=':')  # Đường ngang tại y=0
-    plt.axvline(x=0, color='k', linestyle=':')  # Đường dọc tại x=0
-
+  
     # Hiển thị biểu đồ
     plt.grid(True)
     
