@@ -30,6 +30,8 @@ class DataMaker():
         allLogitsRaw = []
         allLabels = []
         allOriginUIDs = []
+        allSumVectors = []
+        allAvgVectors = []
         for batch in tqdm(self.dataloader, total = len(self.dataloader)):
             batch = tuple(t.to(self.device) if isinstance(t, torch.Tensor) else t for t in batch)
 
@@ -37,7 +39,7 @@ class DataMaker():
             
             with torch.no_grad():
                 if is_mask_token:
-                    _, logits = model.network(masked_id, type_id, mask, 0, 'conllsrl')
+                    lhs, logits = model.network(masked_id, type_id, mask, 0, 'conllsrl')
                 
                 elif del_mask_token:
                     
@@ -48,18 +50,18 @@ class DataMaker():
                     padded_ids = pad_sequences(filtered_ids, maxlen=self.max_seq_len, padding='post', truncating='post', value=0)
                    
                     token_id = torch.tensor(padded_ids, dtype=torch.long).to(self.device)
-                    _, logits = model.network(token_id, type_id, mask, 0, 'conllsrl')
+                    lhs, logits = model.network(token_id, type_id, mask, 0, 'conllsrl')
                     
-                else: _, logits = model.network(token_id, type_id, mask, 0, 'conllsrl')
+                else: lhs, logits = model.network(token_id, type_id, mask, 0, 'conllsrl')
 
-               
+
                 outLogitsSoftmax = nn.functional.softmax(logits, dim = 2).data.cpu().numpy()
                 
                 outLogitsSigmoid = nn.functional.sigmoid(logits).data.cpu().numpy()
                 
                 predicted_sm = np.argmax(outLogitsSoftmax, axis = 2)
                 
-
+               
                 # here in score, we only want to give out the score of the class of tag, which is maximum
                 predScore = np.max(outLogitsSigmoid, axis = 2).tolist() 
                 
@@ -88,19 +90,19 @@ class DataMaker():
                 allLabels.append(label.tolist())
                 allLogitsRaw.append(logits.data.cpu().numpy())
                 allOriginUIDs.append(origin_uid)
-            
+               
         allOriginUIDs = [item for sublist in allOriginUIDs for item in sublist]
         allPreds = [item for sublist in allPreds for item in sublist]
         allScores = [item for sublist in allScores for item in sublist]
         allLogitsSoftmax = [item for sublist in allLogitsSoftmax for item in sublist]
         allLogitsRaw = [item for sublist in allLogitsRaw for item in sublist]
         allLabels = [item for sublist in allLabels for item in sublist]
-
+       
         return allOriginUIDs, allPreds, allScores, allLogitsSoftmax, allLogitsRaw, allLabels
 
 
     def evaluate(self, model, labMapRevN, wrtPredPath=None, wrtDir=None, returnPreds=True, hasTrueLabels=True, needMetrics=True, is_mask_token=False, del_mask_token=False):
-        allOriginUIDs, allPreds, allScores, allLogitsSoftmax, allLogitsRaw, allLabels = self.get_predictions(model, is_mask_token, del_mask_token)
+        allOriginUIDs, allPreds, allScores, allLogitsSoftmax, allLogitsRaw, allLabels= self.get_predictions(model, is_mask_token, del_mask_token)
         
         for j, (p, l) in enumerate(zip(allPreds, allLabels)):
             allLabels[j] = l[:len(p)]
@@ -112,7 +114,6 @@ class DataMaker():
         newScores = []
         newLogitsSoftmax = []
         
-        labelMap = {v:k for k,v in labMapRevN.items()}
         for m, samp in enumerate(allLabels):
             Preds = []
             Labels = []
@@ -160,4 +161,4 @@ class DataMaker():
             df.to_csv(savePath, sep = "\t", index = False)
         
         if returnPreds:
-            return allOriginUIDs, allPreds, allScores, allLogitsSoftmax, allLogitsRaw, allLabels  
+            return allOriginUIDs, allPreds, allScores, allLogitsSoftmax, allLogitsRaw, allLabels

@@ -59,6 +59,6 @@ class PerturbedDataset(Dataset):
             sampler= SequentialSampler(dataset),
             batch_size=batch_size,
             num_workers=NUM_CPU,
-            drop_last=True)  
+            drop_last=False)  
 
         return dataloader  

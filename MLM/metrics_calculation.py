@@ -9,12 +9,11 @@ sys.path.append('/kaggle/working/SRLPredictionEasel')
 from infer_pipeline import inferPipeline
 from data_maker import DataMaker
 from data_preparation import * 
-from mlm_utils.transform_func import get_files
+from mlm_utils.transform_func import get_files, check_data_dir
 from mlm_utils.metric_func import influence_score, relevance_score, brier_score_multi_class, competence_score, get_idx_arg_preds, corr_inf_lhs
 from scipy.stats import spearmanr
 from datetime import datetime
 from logger_ import make_logger
-
 
 def get_word(dataDir, file_name, model, labelRn, wrtDir=None, hasTrueLabels=True, needMetrics=True, is_mask_token=False, del_mask_token=False):
     dataMaker = DataMaker(
@@ -48,12 +47,11 @@ def get_pair_inf_rel(origin, masked, labelMap):
     '''
     Calculate influence and relevance score for each sentence in origin and masked data.
     Save the result in a dictionary with key is the changed argument, value is a list of scores.'''
-    comp_dict = {}
-    list_comp_score = []
+    score_dict = {}
+    list_pair_score = []
     for i in range(len(origin['uid'])):
         for j in range(len(masked['uid'])):
             if int(origin['uid'][i]) == int(masked['uid'][j]):
-                
                 changed_args = check_arg_change(masked['pred'][j], masked['label'][j])
                 inf_score, w_inf = influence_score(origin['logitsSoftmax'][i], masked['logitsSoftmax'][j], get_idx_arg_preds(origin['pred'][i], masked['pred'][j]))
                 
@@ -62,46 +60,50 @@ def get_pair_inf_rel(origin, masked, labelMap):
                 brier_score = (1 - brier_score_multi_class(origin['label'][i], origin['logitsSoftmax'][i], labelMap))
                 score = {
                         'uid': origin['uid'][i],
-                        'influence': sum(inf_score) / sum(w_inf) if sum(w_inf) != 0 else 0,
-                        'relevance': sum(rel_score) / sum(w_rel) if sum(w_rel) != 0 else 0,
-                        'brier_score': brier_score
+                        'influence': round(sum(inf_score) / sum(w_inf), 5) if sum(w_inf) != 0 else 0,
+                        'relevance': round(sum(rel_score) / sum(w_rel), 5) if sum(w_rel) != 0 else 0,
+                        'brier_score': round(brier_score, 5)
                         }
-                list_comp_score.append(score)
-                # save to comp_dict with key is item in changed_args, value is score
+                list_pair_score.append(score)
+                # save to score_dict with key is item in changed_args, value is score
                 for arg in changed_args:
-                    if arg not in comp_dict:
-                        comp_dict[arg] = []
-                    comp_dict[arg].append(score)
-           
-    return comp_dict, list_comp_score
+                    if arg not in score_dict:
+                        score_dict[arg] = []
+                    score_dict[arg].append(score)
+    return score_dict, list_pair_score  
+    # return score_dict, list_pair_score
 
 
-def get_comp_each_arg(dataMaskedDir, dataOriginDir, model, labelRn, logger, is_mask_token, del_mask_token):
+def get_comp_each_arg(dataMaskedDir, dataOriginDir, model, labelRn, logger, wriDir, is_mask_token, del_mask_token):
     file_mask = sorted(get_files(dataMaskedDir))
     file_origin = sorted(get_files(dataOriginDir))
-    all_comp_score = []
-    list_spearrman_dict = []
+   
+    list_comp_dict = []
     for mask, origin in zip(file_mask, file_origin):
         logger.info("Calculate file {} and {}".format(mask, origin))
         resultwordMasked = get_word(dataMaskedDir, mask, model, labelRn, hasTrueLabels=False, needMetrics=False, is_mask_token=is_mask_token, del_mask_token=del_mask_token)
         resultOrigin = get_word(dataOriginDir, origin, model, labelRn, hasTrueLabels=True, needMetrics=False)
 
         labelMap = {v: k for k, v in labelRn.items()}
-        comp_score, list_comp_score = get_pair_inf_rel(resultOrigin, resultwordMasked, labelMap)
+        comp_score, list_pair_score = get_pair_inf_rel(resultOrigin, resultwordMasked, labelMap)
+       
+        # save list_pair_score to csv if wriDir is not None
+        if wriDir is not None:
+            check_data_dir(wriDir, auto_create=True)
+            df_score = pd.DataFrame(list_pair_score)
+            df_score.to_csv(os.path.join(wriDir, 'pair_score_{}.csv'.format(mask.replace('.json', ''))), sep = "\t", index = False)
         
-        
-        all_comp_score.extend(list_comp_score)
-        spearmanr_dict = {}
+        comp_dict = {}
         for key, value in comp_score.items():
             logger.info("key: {} has {} sentences, competence {}, brier_score_loss {}, with p-value {}." \
                         .format(key, len(value), competence_score(value)[0], competence_score(value)[2], competence_score(value)[1]))
            
-            spearmanr_dict[key] = {'comp': competence_score(value)[0],
-                                   'brier_score': competence_score(value)[2]}
+            comp_dict[key] = {'comp': competence_score(value)[0],
+                              'brier_score': competence_score(value)[2]}
         logger.info("-------------------------------------------------")
-        list_spearrman_dict.append(spearmanr_dict)
-        
-    return list_spearrman_dict, all_comp_score
+        list_comp_dict.append(comp_dict)
+       
+    return list_comp_dict
 
 # using plot to visualize the result
 def plot_corr(comp_list, brier_score_list, save_img=False, save_path=None):
@@ -138,8 +140,10 @@ def main():
                         help="path to the model file.")
     parser.add_argument('--log_name', type=str, default = 'cal_comp_by_arg',
                         help = "name of the log file to be created.")
-    parser.add_argument('--is_mask_token', type=bool, default=False )
-    parser.add_argument('--del_mask_token', type=bool, default=False )
+    parser.add_argument('--wriDir', type=Path,
+                        help="path to the directory where the scores will be written.")
+    parser.add_argument('--is_mask_token', type=bool, default=False)
+    parser.add_argument('--del_mask_token', type=bool, default=False)
     args = parser.parse_args()
     
     # setting logging
@@ -157,21 +161,21 @@ def main():
     labelMap = pipe.taskParams.labelMap['conllsrl']
     labelRn = {v:k for k,v in labelMap.items()}
     
-    list_spearmanr_dict, all_inf_score = get_comp_each_arg(args.data_mask_dir, args.data_origin_dir, pipe.model, labelRn, logger, is_mask_token=args.is_mask_token, del_mask_token=args.del_mask_token)
-    
-    # # Task 1.2: correlation between competence and brier score
-    # comp_list = []
-    # brier_score_list = []
-    # for entry in list_spearmanr_dict:
-    #     for key, value in entry.items():
-    #         comp_list.append(value['comp'])
-    #         brier_score_list.append(value['brier_score'])
+    list_comp_dict = get_comp_each_arg(args.data_mask_dir, args.data_origin_dir, pipe.model, labelRn, logger, args.wriDir, is_mask_token=args.is_mask_token, del_mask_token=args.del_mask_token)
+   
+    # Task 1.2: correlation between competence and brier score
+    comp_list = []
+    brier_score_list = []
+    for entry in list_comp_dict:
+        for key, value in entry.items():
+            comp_list.append(value['comp'])
+            brier_score_list.append(value['brier_score'])
 
-    # corr, p_value  = spearmanr(comp_list, brier_score_list)
-    # logger.info("Spearman Correlation Coefficient: {}, with p-value {}.".format(corr, p_value))
+    corr, p_value  = spearmanr(comp_list, brier_score_list)
+    logger.info("Spearman Correlation Coefficient: {}, with p-value {}.".format(corr, p_value))
 
-    # plot_corr(comp_list, brier_score_list, save_img=True, save_path=os.path.join(logDir, 'img_{}.png'.format(args.log_name)))
-    # logger.info("Done Visualization.")
+    plot_corr(comp_list, brier_score_list, save_img=True, save_path=os.path.join(logDir, 'img_{}.png'.format(args.log_name)))
+    logger.info("Done Visualization.")
     
 
 if __name__ == '__main__':

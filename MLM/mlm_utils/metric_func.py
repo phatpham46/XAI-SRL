@@ -42,7 +42,7 @@ def cosine_module(a, b, cosine_sum):
     
     return round(module_similarity * cosine_sum, 5)
 
-def ele_wise_sub(a, b):
+def ele_wise_sub(a, b, negate=False):
     '''
     Function to calculate element-wise subtraction between two vectors.
     '''
@@ -50,9 +50,21 @@ def ele_wise_sub(a, b):
         a = ast.literal_eval(a)
     if not isinstance(b, list):
         b = ast.literal_eval(b)
-    diff =  list(map(operator.sub, a, b))   
-    return round(sum(diff) / len(diff), 5)
-
+    if len(a) != len(b):
+        raise ValueError("Both lists must be of the same length")
+   
+    # Calculate the absolute differences
+    abs_diff = [abs(i - j) for i, j in zip(a, b)]
+    
+    # Calculate the average of the absolute differences
+    avg_abs_diff = sum(abs_diff) / len(abs_diff)
+    
+    # Return the result, negated if required
+    if negate:
+        return round(-avg_abs_diff, 5)
+    else:
+        return round(avg_abs_diff, 5)
+    
 def influence_score(outLogitsSigmoid_original, outLogitsSigmoid_meddle, list_arg_change):
     influence_score = []
     weight = []
@@ -143,7 +155,7 @@ def brier_score_multi_class(y_true, y_prob, labelMap):
   
     # Calculate the Brier score for each class and average them
     brier_scores = np.array([brier_score_loss(y_true_one_hot[:, i], y_prob[:, i], pos_label=1) for i in range(y_prob.shape[1])])
-    return np.mean(brier_scores) # mean for all classes
+    return round(np.mean(brier_scores), 5) # mean for all classes
 
 
 def competence_score(comp):
