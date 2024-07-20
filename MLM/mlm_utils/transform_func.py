@@ -6,7 +6,7 @@ import torch
 from MLM.mlm_utils.model_utils import NLP, TOKENIZER, MAX_SEQ_LEN, POS_TAG_MAPPING
 
 def check_data_dir(data_dir: str, auto_create=False) -> None:
-    """ Check if the data directory exists. If it does not exist, create it if auto_create is True.
+    """Check if the data directory exists. If it does not exist, create it if auto_create is True.
 
     Args:
         data_dir (str): Path to the data directory.
@@ -45,7 +45,7 @@ def get_pos_tag_word(word:str, text:str) -> dict:
 
 
 def get_word_list(text: str) -> list:
-    '''Function to get the list of words from a given text using spacy'''
+    '''Function to get the list of words from a given sentence using SpaCy'''
     
     doc = NLP(text)
     word_lst = [word.text for word in [token for token in doc]]

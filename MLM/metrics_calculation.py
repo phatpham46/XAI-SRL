@@ -4,8 +4,8 @@ import sys
 from pathlib import Path
 from matplotlib import pyplot as plt
 import pandas as pd
-sys.path.append('/kaggle/working/SRLPredictionEasel')
-# sys.path.append('../')
+# sys.path.append('/kaggle/working/SRLPredictionEasel')
+sys.path.append('../')
 from infer_pipeline import inferPipeline
 from data_maker import DataMaker
 from data_preparation import * 
@@ -111,8 +111,8 @@ def plot_corr(comp_list, brier_score_list, save_img=False, save_path=None):
     plt.scatter(comp_list, brier_score_list)
    
     plt.xlabel('Competence')
-    plt.ylabel('Brier Score')
-    plt.title('Correlation between Competence vs Brier Score')
+    plt.ylabel('1 - Brier Score')
+    plt.title('Correlation between Competence vs (1 - Brier Score)')
   
     # Hiển thị biểu đồ
     plt.grid(True)
@@ -121,8 +121,8 @@ def plot_corr(comp_list, brier_score_list, save_img=False, save_path=None):
     if save_img and save_path is not None:
         plt.savefig(save_path)
 
-
 def main():
+    
     # taking in arguments
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_mask_dir', type=Path, required=True,  
@@ -157,6 +157,7 @@ def main():
     labelRn = {v:k for k,v in labelMap.items()}
     
     list_comp_dict = get_comp_each_arg(args.data_mask_dir, args.data_origin_dir, pipe.model, labelRn, logger, args.wriDir, is_mask_token=args.is_mask_token, del_mask_token=args.del_mask_token)
+   
    
     # Task 1.2: correlation between competence and brier score
     comp_list = []

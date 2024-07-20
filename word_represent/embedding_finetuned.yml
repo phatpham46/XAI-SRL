@@ -1,7 +1,7 @@
 transform1:
   transform_func: get_embedding_finetuned
   read_file_names:
-    #- ner_coNLL_train.json
+    - ner_coNLL_train.json
     - ner_coNLL_testa.json
     - ner_coNLL_testb.json
     - ner_coNLL_testa_abolish.json

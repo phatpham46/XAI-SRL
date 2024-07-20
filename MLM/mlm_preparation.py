@@ -5,9 +5,8 @@ import re
 import torch
 import pandas as pd
 from tqdm import tqdm
-from sklearn.model_selection import train_test_split
 from mlm_utils.transform_func import get_pos_tag_word, get_word_list, check_data_dir, decode_token, encode_text, get_files, pos_tag_mapping
-from mlm_utils.model_utils import MAX_SEQ_LEN, NLP, TOKENIZER
+from mlm_utils.model_utils import NLP, TOKENIZER
 
 def convert_csv_to_tsv(readDir: str, writeDir: str) -> None:
     '''

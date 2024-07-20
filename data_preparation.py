@@ -5,7 +5,7 @@ import os
 import multiprocessing as mp
 from ast import literal_eval
 from utils.task_utils import TasksParam
-from utils.data_utils import TaskType, NLP_MODELS
+from utils.data_utils import NLP_MODELS
 from keras_preprocessing.sequence import pad_sequences
 
 def load_data(dataPath, hasLabels):
@@ -36,16 +36,13 @@ def load_data(dataPath, hasLabels):
     return allData
 
 
-def create_data_ner(data, chunkNumber, tempList, maxSeqLen, tokenizer, labelMap):
+def create_data_srl(data, chunkNumber, tempList, maxSeqLen, tokenizer, labelMap):
     '''
-    Function to create data in NER/Sequence Labelling format.
+    Function to create data in SRL format.
     The tsv format expected by this function is 
     sample['uid] :- unique sample/sentence id
     sample['sentence'] :- list of the sentence tokens for the sentence eg. ['My', 'name', 'is', 'hello']
-    sample['label] :- list of corresponding tag for token in sentence ed. ['O', 'O', 'O', 'B-PER']
-
-    Here we won't use the standard data converter as format for NER data 
-    is slightly different and required different steps to prepare.
+    sample['label] :- list of corresponding tag for token in sentence ed. ['O', 'O', 'B-A1', 'I-A1']
 
     The '[CLS]' and '[SEP]' also has to be added in label front and end, as they will
     be present in sentence start and end.
@@ -53,7 +50,7 @@ def create_data_ner(data, chunkNumber, tempList, maxSeqLen, tokenizer, labelMap)
     its unknown, we need to add 'X' in label for extra pieces
 
     '''
-    name = 'ner_{}.json'.format(str(chunkNumber))
+    name = 'srl{}.json'.format(str(chunkNumber))
 
     with open(name, 'w') as wf:
         with tqdm(total = len(data), position = chunkNumber) as progress:  
@@ -65,13 +62,16 @@ def create_data_ner(data, chunkNumber, tempList, maxSeqLen, tokenizer, labelMap)
                     tokens = tokenizer.tokenize(word)
                     for m, token in enumerate(tokens):
                         tempTokens.append(token)
-                        # #only first piece would be marked with label
-                        # if m==0:
-                        #     tempLabels.append(label)
-                        # else: 
-                        #     tempLabels.append('X')
+                       
+                        #only first piece would be marked with label
+                        if m==0:
+                            tempLabels.append(label)
+                        else: 
+                            tempLabels.append('X')
+                       
                         # temp label will append the same label for all the pieces of a word
                         tempLabels.append(label)
+                
                 # adding [SEP] at end
                 tempTokens.append('[SEP]')
                 tempLabels.append('[SEP]')
@@ -79,7 +79,7 @@ def create_data_ner(data, chunkNumber, tempList, maxSeqLen, tokenizer, labelMap)
                                         padding='max_length', 
                                         truncation=True,
                                         max_length = maxSeqLen)
-                # print("len vocab: ", len(tokenizer.get_vocab()))  #30522 
+                
                 typeIds = None
                 inputMask = None
                 tokenIds = out['input_ids']
@@ -117,8 +117,7 @@ def create_data_multithreaded(data, wrtPath, tokenizer, taskObj, taskName, maxSe
     tempFilesList = man.list()
     
     if multithreaded:
-        # numProcess = mp.cpu_count() - 1
-        numProcess = 1
+        numProcess = mp.cpu_count() - 1
 
     '''
     Dividing the entire data into chunks which can be sent to different processes.
@@ -136,7 +135,7 @@ def create_data_multithreaded(data, wrtPath, tokenizer, taskObj, taskName, maxSe
     for i in range(numProcess):
         dataChunk = data[chunkSize*i : chunkSize*(i+1)]
 
-        p = mp.Process(target = create_data_ner, args = (dataChunk, i, tempFilesList, maxSeqLen, tokenizer, labelMap))
+        p = mp.Process(target = create_data_srl, args = (dataChunk, i, tempFilesList, maxSeqLen, tokenizer, labelMap))
         
         p.start()
         processes.append(p)
@@ -180,20 +179,19 @@ def main():
     if configName is None:
         configName = defaultName
     
-    #making tokenizer for model
+    # making tokenizer for model
     tokenizer = tokenizerClass.from_pretrained(configName)
     print('{} model tokenizer loaded for config {}'.format(modelName, configName))
-    # dataPath = os.path.join(args.data_dir, '{}_prepared_data'.format(configName))
     dataPath = os.path.join(args.data_dir, 'modify_label_prepared_data')
     if not os.path.exists(dataPath):
         os.makedirs(dataPath)
 
-    for taskId, taskName in tasks.taskIdNameMap.items():
+    for _, taskName in tasks.taskIdNameMap.items():
         for file in tasks.fileNamesMap[taskName]:
             print('Loading raw data for task {} from {}'.format(taskName, os.path.join(args.data_dir, file)))
             rows = load_data(os.path.join(args.data_dir, file), hasLabels = args.has_labels)
-            #wrtFile = os.path.join(dataPath, '{}.json'.format(file.split('.')[0]))
             wrtFile = os.path.join(dataPath, '{}.json'.format(file.lower().replace('.tsv', '')))
+            
             print('Processing Started...')
             create_data_multithreaded(rows, wrtFile, tokenizer, tasks, taskName,
                                     args.max_seq_len, args.multithreaded)

@@ -1,80 +1,77 @@
 conllsrl:
   model_type: BERT
-  config_name: dmis-lab/biobert-base-cased-v1.2  #bert-base-uncased
+  config_name: dmis-lab/biobert-base-cased-v1.2 
   dropout_prob: 0.2
-  # label_map_or_file: ./data/coNLL_tsv/ner_coNLL_train_label_map.joblib
-  # label_map_or_file: /content/drive/MyDrive/ColabNotebooks/SRL_data/coNLL_tsv/ner_coNLL_train_label_map.joblib
-  label_map_or_file: /kaggle/input/srl-data/ner_coNLL_train_label_map.joblib 
+  label_map_or_file: ./data/coNLL_tsv/srl_train_label_map.joblib
   metrics:
   - seqeval_f1_score
   - seqeval_precision
   - seqeval_recall
-  # - brier_score
+  - brier_score
   loss_type: NERLoss
   task_type: NER
   file_names:
-  - ner_coNLL_train.tsv
-  - ner_coNLL_testa.tsv
-  - ner_coNLL_testb.tsv
-  - ner_coNLL_testa_abolish.tsv
-  - ner_coNLL_testb_abolish.tsv
-  - ner_coNLL_testa_alter.tsv
-  - ner_coNLL_testb_alter.tsv
-  - ner_coNLL_testa_begin.tsv
-  - ner_coNLL_testb_begin.tsv
-  - ner_coNLL_testa_block.tsv
-  - ner_coNLL_testb_block.tsv
-  - ner_coNLL_testa_catalyse.tsv
-  - ner_coNLL_testb_catalyse.tsv
-  - ner_coNLL_testa_confer.tsv
-  - ner_coNLL_testb_confer.tsv
-  - ner_coNLL_testa_decrease.tsv
-  - ner_coNLL_testb_decrease.tsv
-  - ner_coNLL_testa_delete.tsv
-  - ner_coNLL_testb_delete.tsv
-  - ner_coNLL_testa_develop.tsv
-  - ner_coNLL_testb_develop.tsv
-  - ner_coNLL_testa_disrupt.tsv
-  - ner_coNLL_testb_disrupt.tsv
-  - ner_coNLL_testa_eliminate.tsv
-  - ner_coNLL_testb_eliminate.tsv
-  - ner_coNLL_testa_encode.tsv
-  - ner_coNLL_testb_encode.tsv
-  - ner_coNLL_testa_express.tsv
-  - ner_coNLL_testb_express.tsv
-  - ner_coNLL_testa_generate.tsv
-  - ner_coNLL_testb_generate.tsv
-  - ner_coNLL_testa_inhibit.tsv
-  - ner_coNLL_testb_inhibit.tsv
-  - ner_coNLL_testa_initiate.tsv
-  - ner_coNLL_testb_initiate.tsv
-  - ner_coNLL_testa_lead.tsv
-  - ner_coNLL_testb_lead.tsv
-  - ner_coNLL_testa_lose.tsv
-  - ner_coNLL_testb_lose.tsv
-  - ner_coNLL_testa_modify.tsv
-  - ner_coNLL_testb_modify.tsv
-  - ner_coNLL_testa_mutate.tsv
-  - ner_coNLL_testb_mutate.tsv
-  - ner_coNLL_testa_proliferate.tsv
-  - ner_coNLL_testb_proliferate.tsv
-  - ner_coNLL_testa_recognize.tsv
-  - ner_coNLL_testb_recognize.tsv
-  - ner_coNLL_testa_result.tsv
-  - ner_coNLL_testb_result.tsv
-  - ner_coNLL_testa_skip.tsv
-  - ner_coNLL_testb_skip.tsv
-  - ner_coNLL_testa_splice.tsv
-  - ner_coNLL_testb_splice.tsv
-  - ner_coNLL_testa_transcribe.tsv
-  - ner_coNLL_testb_transcribe.tsv
-  - ner_coNLL_testa_transform.tsv
-  - ner_coNLL_testb_transform.tsv
-  - ner_coNLL_testa_translate.tsv
-  - ner_coNLL_testb_translate.tsv
-  - ner_coNLL_testa_truncate.tsv
-  - ner_coNLL_testb_truncate.tsv
-
+  - srl_train.tsv
+  - srl_testa.tsv
+  - srl_testb.tsv
+  - srl_testa_abolish.tsv
+  - srl_testb_abolish.tsv
+  - srl_testa_alter.tsv
+  - srl_testb_alter.tsv
+  - srl_testa_begin.tsv
+  - srl_testb_begin.tsv
+  - srl_testa_block.tsv
+  - srl_testb_block.tsv
+  - srl_testa_catalyse.tsv
+  - srl_testb_catalyse.tsv
+  - srl_testa_confer.tsv
+  - srl_testb_confer.tsv
+  - srl_testa_decrease.tsv
+  - srl_testb_decrease.tsv
+  - srl_testa_delete.tsv
+  - srl_testb_delete.tsv
+  - srl_testa_develop.tsv
+  - srl_testb_develop.tsv
+  - srl_testa_disrupt.tsv
+  - srl_testb_disrupt.tsv
+  - srl_testa_eliminate.tsv
+  - srl_testb_eliminate.tsv
+  - srl_testa_encode.tsv
+  - srl_testb_encode.tsv
+  - srl_testa_express.tsv
+  - srl_testb_express.tsv
+  - srl_testa_generate.tsv
+  - srl_testb_generate.tsv
+  - srl_testa_inhibit.tsv
+  - srl_testb_inhibit.tsv
+  - srl_testa_initiate.tsv
+  - srl_testb_initiate.tsv
+  - srl_testa_lead.tsv
+  - srl_testb_lead.tsv
+  - srl_testa_lose.tsv
+  - srl_testb_lose.tsv
+  - srl_testa_modify.tsv
+  - srl_testb_modify.tsv
+  - srl_testa_mutate.tsv
+  - srl_testb_mutate.tsv
+  - srl_testa_proliferate.tsv
+  - srl_testb_proliferate.tsv
+  - srl_testa_recognize.tsv
+  - srl_testb_recognize.tsv
+  - srl_testa_result.tsv
+  - srl_testb_result.tsv
+  - srl_testa_skip.tsv
+  - srl_testb_skip.tsv
+  - srl_testa_splice.tsv
+  - srl_testb_splice.tsv
+  - srl_testa_transcribe.tsv
+  - srl_testb_transcribe.tsv
+  - srl_testa_transform.tsv
+  - srl_testb_transform.tsv
+  - srl_testa_translate.tsv
+  - srl_testb_translate.tsv
+  - srl_testa_truncate.tsv
+  - srl_testb_truncate.tsv
   # - ner_conll_format_abolish_full.tsv
   # - ner_conll_format_alter_full.tsv
   # - ner_conll_format_begin_2_full.tsv

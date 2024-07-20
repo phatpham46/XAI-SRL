@@ -30,8 +30,7 @@ class DataMaker():
         allLogitsRaw = []
         allLabels = []
         allOriginUIDs = []
-        allSumVectors = []
-        allAvgVectors = []
+       
         for batch in tqdm(self.dataloader, total = len(self.dataloader)):
             batch = tuple(t.to(self.device) if isinstance(t, torch.Tensor) else t for t in batch)
 
