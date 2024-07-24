@@ -222,7 +222,6 @@ class batchUtils:
         # and in evaluation, it won't go with batch data, rather will keep it with meta data for metrics
         if self.isTrain:
 
-            #if taskType in (TaskType.NER):
             batchData.append(torch.LongTensor(labels))
 
             #position for label
@@ -230,7 +229,7 @@ class batchUtils:
         else:
             # for test/eval labels won't be added into batch, but kept in meta data
             # so metric evaluation can be done
-            #batchData :- [tokenIdsBatchTensor, typeIdsBatchTensor, MasksBatchTensor]
+            # batchData :- [tokenIdsBatchTensor, typeIdsBatchTensor, MasksBatchTensor]
             batchMetaData['label'] = labels
 
         batchMetaData['uids'] = [sample['uid'] for sample in batch]  # used in scoring

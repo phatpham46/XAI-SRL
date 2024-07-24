@@ -20,7 +20,7 @@ class CrossEntropyLoss(_Loss):
         loss *= self.alpha
         return loss
 
-class NERLoss(_Loss):
+class SRLLoss(_Loss):
     def __init__(self, alpha=1.0, name='Cross Entropy Loss'):
         super().__init__()
         
@@ -30,27 +30,27 @@ class NERLoss(_Loss):
     def forward(self, inp, target, attnMasks = None):
 
         """
-        This loss is a modified version of cross entropy loss for NER/sequence labelling tasks.
+        This loss is a modified version of cross entropy loss for SRL tasks.
         This loss ignores extra ‘O’ values through attention masks.
 
-        To use this loss for training, set ``loss_type`` : **NERLoss** in task file
+        To use this loss for training, set ``loss_type`` : **SRLLoss** in task file
         """
         
         '''
         inp shape would be (batchSize, maxSeqlen, classNum). But for loss calculation
         we need (batchSize, classNum). Hence we will squeeze the batchSize and maxSeqlen together.
 
-        In NER, we have to ignore the loss created for the extra padding that
+        In SRL, we have to ignore the loss created for the extra padding that
         has been done for making labels till max seq length. Hence we will use
         attention masks to ignore losses with those indices
         '''
         if attnMasks is not None:
-            nerLoss = attnMasks.view(-1) == 1
-            nerlogits = inp.view(-1, inp.size(-1))
-            nerLabels = torch.where(
-                nerLoss, target.view(-1), torch.tensor(self.ignore_index).type_as(target)
+            srlLoss = attnMasks.view(-1) == 1
+            srllogits = inp.view(-1, inp.size(-1))
+            srlLabels = torch.where(
+                srlLoss, target.view(-1), torch.tensor(self.ignore_index).type_as(target)
             )
-            finalLoss = F.cross_entropy(nerlogits, nerLabels, ignore_index=self.ignore_index)
+            finalLoss = F.cross_entropy(srllogits, srlLabels, ignore_index=self.ignore_index)
 
         else:
             finalLoss = F.cross_entropy(inp.view(-1, inp.size(-1)), target.view(-1),

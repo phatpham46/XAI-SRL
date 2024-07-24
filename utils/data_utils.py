@@ -1,17 +1,37 @@
+import spacy
+import torch
 from enum import IntEnum
-
-from transformers import BertConfig, BertModel, BertTokenizer
+from transformers import BertConfig, BertModel, BertTokenizerFast
 from SRL.loss import *
 from utils.tranform_functions import pasbio_srl_to_tsv, get_embedding, get_embedding_finetuned, convert_csv_to_txt
 from utils.eval_metrics import *
+from multiprocessing import cpu_count
 
-bioBertTokenizer = BertTokenizer.from_pretrained('dmis-lab/biobert-base-cased-v1.2', do_lower_case=True,truncation=True)
+# Load the English language model
+NLP = spacy.load("en_core_web_sm")
 
-MAX_SEQ_LEN = 50
+MAX_SEQ_LEN = 85
+
+POS_TAG_MAPPING = {"NOUN":1, "VERB":2, "ADJ":3, "ADV":4}
+
+BERT_PRETRAIN_MODEL = "dmis-lab/biobert-base-cased-v1.2"
+
+bioBertTokenizer = BertTokenizerFast.from_pretrained(BERT_PRETRAIN_MODEL, do_lower_case=True, truncation=True)
 
 NLP_MODELS = {
-    "bert": (BertConfig, BertModel, bioBertTokenizer, 'dmis-lab/biobert-base-cased-v1.2'), 
+    "bert": (BertConfig, BertModel, bioBertTokenizer, BERT_PRETRAIN_MODEL), 
 }
+
+def count_num_cpu_gpu():
+    if torch.cuda.is_available():
+        num_gpu_cores = torch.cuda.device_count()
+        num_cpu_cores = (cpu_count() // num_gpu_cores // 2) - 1
+    else:
+        num_gpu_cores = 0
+        num_cpu_cores = (cpu_count() // 2) - 1
+    return num_cpu_cores, num_gpu_cores
+NUM_CPU, NUM_GPU = count_num_cpu_gpu()
+
 
 TRANSFORM_FUNCS = {
     "pasbio_srl_to_tsv" : pasbio_srl_to_tsv,
@@ -24,11 +44,11 @@ class ModelType(IntEnum):
     BERT = 1
 
 class TaskType(IntEnum):
-    NER = 3
+    SRL = 3
 
 class LossType(IntEnum):
     CrossEntropyLoss = 0
-    NERLoss = 1
+    SRLLoss = 1
     
 METRICS = {
     "classification_accuracy": classification_accuracy,
@@ -44,5 +64,5 @@ METRICS = {
 
 LOSSES = {
     "crossentropyloss" : CrossEntropyLoss,
-    "nerloss" : NERLoss
+    "nerloss" : SRLLoss
 }

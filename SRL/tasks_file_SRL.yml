@@ -8,8 +8,8 @@ conllsrl:
   - seqeval_precision
   - seqeval_recall
   - brier_score
-  loss_type: NERLoss
-  task_type: NER
+  loss_type: SRLLoss
+  task_type: SRL
   file_names:
   - srl_train.tsv
   - srl_testa.tsv

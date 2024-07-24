@@ -1,9 +1,7 @@
 
 import os
-import numpy as np
 import torch
-
-from MLM.mlm_utils.model_utils import NLP, TOKENIZER, MAX_SEQ_LEN, POS_TAG_MAPPING
+from mlm_utils.model_utils import NLP, MAX_SEQ_LEN, POS_TAG_MAPPING
 
 def check_data_dir(data_dir: str, auto_create=False) -> None:
     """Check if the data directory exists. If it does not exist, create it if auto_create is True.
@@ -100,15 +98,15 @@ def get_idx_arg_preds(preds_origin, preds_masked, label_origin=None): # label_or
    
     return list_idx_arg_change
     
-def decode_token(input_ids: list, skip_special_tokens=False) -> str:
+def decode_token(input_ids: list, tokenizer, skip_special_tokens=False) -> str:
     ''' Funciton to decode the token to text
     '''
     
-    return TOKENIZER.decode(input_ids, skip_special_tokens=skip_special_tokens, return_offsets_mapping=True)
+    return tokenizer.decode(input_ids, skip_special_tokens=skip_special_tokens, return_offsets_mapping=True)
 
-def encode_text(text: str) -> dict:
+def encode_text(text: str, tokenizer) -> dict:
     ''' Function to encode the text '''
-    return TOKENIZER.encode_plus(
+    return tokenizer.encode_plus(
                     text,
                     max_length=MAX_SEQ_LEN,
                     padding='max_length', 

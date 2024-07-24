@@ -9,13 +9,13 @@ sys.path.append('../')
 from infer_pipeline import inferPipeline
 from data_maker import DataMaker
 from data_preparation import * 
-from mlm_utils.transform_func import get_files, check_data_dir
-from mlm_utils.metric_func import influence_score, relevance_score, brier_score_multi_class, competence_score, get_idx_arg_preds, corr_inf_lhs
+from mlm_utils.transform_func import get_files, check_data_dir, get_idx_arg_preds
+from mlm_utils.metric_func import influence_score, relevance_score, brier_score_multi_class, competence_score
 from scipy.stats import spearmanr
 from datetime import datetime
 from logger_ import make_logger
 
-def get_word(dataDir, file_name, model, labelRn, wrtDir=None, hasTrueLabels=True, needMetrics=True, is_mask_token=False, del_mask_token=False):
+def evaluateWord(dataDir, file_name, model, labelRn, wrtDir=None, hasTrueLabels=True, needMetrics=True, is_mask_token=False, del_mask_token=False):
     dataMaker = DataMaker(
         data_file= os.path.join(dataDir, file_name)
     )
@@ -24,10 +24,9 @@ def get_word(dataDir, file_name, model, labelRn, wrtDir=None, hasTrueLabels=True
     return {
         'uid': result[0],
         'pred': result[1],
-        'score': result[2],
-        'logitsSoftmax': result[3],
-        'logitsRaw': result[4],
-        'label': result[5] # masked word kh cos label
+        'logitsSoftmax': result[2],
+        'logitsRaw': result[3],
+        'label': result[4] # masked word kh cos label
     }
     
 def check_arg_change(preds_masked, label):
@@ -43,35 +42,44 @@ def check_arg_change(preds_masked, label):
     return changed_args    
         
 
-def get_pair_inf_rel(origin, masked, labelMap):
+def get_importance_score(origin_data, perturbed_data, labelMap):
     '''
-    Calculate influence and relevance score for each sentence in origin and masked data.
-    Save the result in a dictionary with key is the changed argument, value is a list of scores.'''
+    Calculate influence, relevance score and brier_score for each perturbation affected argument.
+    Save the result in a dictionary with key is the changed argument, value is a list of important scores.
+    Args:
+        origin_data: dict, contains the original data
+        perturbed_data: dict, contains the masked data
+        labelMap: dict, label mapping
+        
+    Returns:
+        score_dict: dict, key is the changed argument, value is a list of important scores
+        list_pair_score: list, contains the score of each pair of origin and perturbed data
+    '''
     score_dict = {}
     list_pair_score = []
-    for i in range(len(origin['uid'])):
-        for j in range(len(masked['uid'])):
-            if int(origin['uid'][i]) == int(masked['uid'][j]):
-                changed_args = check_arg_change(masked['pred'][j], masked['label'][j])
-                inf_score, w_inf = influence_score(origin['logitsSoftmax'][i], masked['logitsSoftmax'][j], get_idx_arg_preds(origin['pred'][i], masked['pred'][j]))
+    for i in range(len(origin_data['uid'])):
+        for j in range(len(perturbed_data['uid'])):
+            if int(origin_data['uid'][i]) == int(perturbed_data['uid'][j]):
+                changed_args = check_arg_change(perturbed_data['pred'][j], perturbed_data['label'][j])
+                inf_score, w_inf = influence_score(origin_data['logitsSoftmax'][i], perturbed_data['logitsSoftmax'][j], get_idx_arg_preds(origin_data['pred'][i], perturbed_data['pred'][j]))
                 
-                rel_score, w_rel = relevance_score(origin['logitsSoftmax'][i], masked['logitsSoftmax'][j],labelMap, origin['label'][i], origin['pred'][i], masked['pred'][j])
+                rel_score, w_rel = relevance_score(origin_data['logitsSoftmax'][i], perturbed_data['logitsSoftmax'][j],labelMap, origin_data['label'][i], origin_data['pred'][i], perturbed_data['pred'][j])
                 
-                brier_score = (1 - brier_score_multi_class(origin['label'][i], origin['logitsSoftmax'][i], labelMap))
+                brier_score = (1 - brier_score_multi_class(origin_data['label'][i], origin_data['logitsSoftmax'][i], labelMap))
                 score = {
-                        'uid': origin['uid'][i],
+                        'uid': origin_data['uid'][i],
                         'influence': round(sum(inf_score) / sum(w_inf), 5) if sum(w_inf) != 0 else 0,
                         'relevance': round(sum(rel_score) / sum(w_rel), 5) if sum(w_rel) != 0 else 0,
                         'brier_score': round(brier_score, 5)
                         }
                 list_pair_score.append(score)
+                
                 # save to score_dict with key is item in changed_args, value is score
                 for arg in changed_args:
                     if arg not in score_dict:
                         score_dict[arg] = []
                     score_dict[arg].append(score)
     return score_dict, list_pair_score  
-    # return score_dict, list_pair_score
 
 
 def get_comp_each_arg(dataMaskedDir, dataOriginDir, model, labelRn, logger, wriDir, is_mask_token, del_mask_token):
@@ -81,11 +89,11 @@ def get_comp_each_arg(dataMaskedDir, dataOriginDir, model, labelRn, logger, wriD
     list_comp_dict = []
     for mask, origin in zip(file_mask, file_origin):
         logger.info("Calculate file {} and {}".format(mask, origin))
-        resultwordMasked = get_word(dataMaskedDir, mask, model, labelRn, hasTrueLabels=False, needMetrics=False, is_mask_token=is_mask_token, del_mask_token=del_mask_token)
-        resultOrigin = get_word(dataOriginDir, origin, model, labelRn, hasTrueLabels=True, needMetrics=False)
+        resultwordMasked = evaluateWord(dataMaskedDir, mask, model, labelRn, hasTrueLabels=False, needMetrics=False, is_mask_token=is_mask_token, del_mask_token=del_mask_token)
+        resultOrigin = evaluateWord(dataOriginDir, origin, model, labelRn, hasTrueLabels=True, needMetrics=False)
 
         labelMap = {v: k for k, v in labelRn.items()}
-        comp_score, list_pair_score = get_pair_inf_rel(resultOrigin, resultwordMasked, labelMap)
+        comp_score, list_pair_score = get_importance_score(resultOrigin, resultwordMasked, labelMap)
        
         # save list_pair_score to csv if wriDir is not None
         if wriDir is not None:

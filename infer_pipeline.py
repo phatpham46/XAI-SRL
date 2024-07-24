@@ -3,7 +3,7 @@ Pipeline for inference on batch for multi-task
 """
 from MLM.mlm_utils.pertured_dataset import PerturbedDataset
 from utils.data_utils import TaskType, NLP_MODELS
-from SRL.model import multiTaskModel
+from SRL.model import SRLModelTrainer
 from transformers import BertModel, BertTokenizer
 from data_preparation import * 
 import os
@@ -61,7 +61,7 @@ class inferPipeline:
             allParams['epsilon'] = 1e-8
 
             #making and loading model
-            self.model = multiTaskModel(allParams)
+            self.model = SRLModelTrainer(allParams)
             self.model.load_multi_task_model(loadedDict)
        
         else:

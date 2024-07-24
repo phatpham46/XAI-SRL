@@ -25,7 +25,6 @@ class DataMaker():
         model.network.eval()
         
         allPreds = []
-        allScores = []
         allLogitsSoftmax = []
         allLogitsRaw = []
         allLabels = []
@@ -38,7 +37,7 @@ class DataMaker():
             
             with torch.no_grad():
                 if is_mask_token:
-                    lhs, logits = model.network(masked_id, type_id, mask, 0, 'conllsrl')
+                    _, logits = model.network(masked_id, type_id, mask, 0, 'conllsrl')
                 
                 elif del_mask_token:
                     
@@ -49,42 +48,29 @@ class DataMaker():
                     padded_ids = pad_sequences(filtered_ids, maxlen=self.max_seq_len, padding='post', truncating='post', value=0)
                    
                     token_id = torch.tensor(padded_ids, dtype=torch.long).to(self.device)
-                    lhs, logits = model.network(token_id, type_id, mask, 0, 'conllsrl')
+                    _, logits = model.network(token_id, type_id, mask, 0, 'conllsrl')
                     
-                else: lhs, logits = model.network(token_id, type_id, mask, 0, 'conllsrl')
+                else: _, logits = model.network(token_id, type_id, mask, 0, 'conllsrl')
 
 
                 outLogitsSoftmax = nn.functional.softmax(logits, dim = 2).data.cpu().numpy()
-                
-                outLogitsSigmoid = nn.functional.sigmoid(logits).data.cpu().numpy()
-                
-                predicted_sm = np.argmax(outLogitsSoftmax, axis = 2)
-                
-               
-                # here in score, we only want to give out the score of the class of tag, which is maximum
-                predScore = np.max(outLogitsSigmoid, axis = 2).tolist() 
-                
-                predicted_sm = predicted_sm.tolist()
-                
+                predicted_sm = np.argmax(outLogitsSoftmax, axis = 2).tolist()
+            
                 # get the attention masks, we need to discard the predictions made for extra padding
                 
                 predictedTags = []
-                predScoreTags = []
                 
                 if mask is not None:
                     #shape of attention Masks (batchSize, maxSeqLen)
                     actualLengths = mask.cpu().numpy().sum(axis = 1).tolist()
                 
-                    for i, (pred, sc) in enumerate(zip(predicted_sm, predScore)):
-                        predictedTags.append( pred[:actualLengths[i]] )
-                        predScoreTags.append( sc[:actualLengths[i]])
+                    for i, pred in enumerate(predicted_sm):
+                        predictedTags.append(pred[:actualLengths[i]])
         
                 else:
                     predictedTags = predicted_sm
-                    predScoreTags = predScore
                 
                 allPreds.append(predictedTags)  
-                allScores.append(predScoreTags)  
                 allLogitsSoftmax.append(outLogitsSoftmax)
                 allLabels.append(label.tolist())
                 allLogitsRaw.append(logits.data.cpu().numpy())
@@ -92,16 +78,15 @@ class DataMaker():
                
         allOriginUIDs = [item for sublist in allOriginUIDs for item in sublist]
         allPreds = [item for sublist in allPreds for item in sublist]
-        allScores = [item for sublist in allScores for item in sublist]
         allLogitsSoftmax = [item for sublist in allLogitsSoftmax for item in sublist]
         allLogitsRaw = [item for sublist in allLogitsRaw for item in sublist]
         allLabels = [item for sublist in allLabels for item in sublist]
        
-        return allOriginUIDs, allPreds, allScores, allLogitsSoftmax, allLogitsRaw, allLabels
+        return allOriginUIDs, allPreds, allLogitsSoftmax, allLogitsRaw, allLabels
 
 
     def evaluate(self, model, labMapRevN, wrtPredPath=None, wrtDir=None, returnPreds=True, hasTrueLabels=True, needMetrics=True, is_mask_token=False, del_mask_token=False):
-        allOriginUIDs, allPreds, allScores, allLogitsSoftmax, allLogitsRaw, allLabels= self.get_predictions(model, is_mask_token, del_mask_token)
+        allOriginUIDs, allPreds, allLogitsSoftmax, allLogitsRaw, allLabels= self.get_predictions(model, is_mask_token, del_mask_token)
         
         for j, (p, l) in enumerate(zip(allPreds, allLabels)):
             allLabels[j] = l[:len(p)]
@@ -110,31 +95,24 @@ class DataMaker():
         
         newPreds = []
         newLabels = []
-        newScores = []
         newLogitsSoftmax = []
         
         for m, samp in enumerate(allLabels):
             Preds = []
             Labels = []
-            Scores = []
             LogitsSm = []
             for n, ele in enumerate(samp):
-                #print(ele)
                 if ele != '[CLS]' and ele != '[SEP]' and ele != 'X':
-                  
                     Preds.append(allPreds[m][n])
                     Labels.append(ele)
-                    Scores.append(allScores[m][n])
                     LogitsSm.append(allLogitsSoftmax[m][n])
                     
             newPreds.append(Preds)
             newLabels.append(Labels)
-            newScores.append(Scores)
             newLogitsSoftmax.append(LogitsSm)
         
         allLabels = newLabels
         allPreds = newPreds
-        allScores = newScores    
         allLogitsSoftmax = newLogitsSoftmax        
         
         if needMetrics:
@@ -160,4 +138,4 @@ class DataMaker():
             df.to_csv(savePath, sep = "\t", index = False)
         
         if returnPreds:
-            return allOriginUIDs, allPreds, allScores, allLogitsSoftmax, allLogitsRaw, allLabels
+            return allOriginUIDs, allPreds, allLogitsSoftmax, allLogitsRaw, allLabels

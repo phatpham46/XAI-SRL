@@ -1,14 +1,12 @@
 import joblib
 import os
+import csv
 import json
 import pickle
 import torch
-from statistics import median
 from SRL import model
 from transformers import BertModel
-import csv
-from MLM.mlm_utils.model_utils import NLP
-from MLM.mlm_utils.transform_func import get_word_list
+from mlm_utils.transform_func import get_word_list
 SEED = 42
 
 
@@ -199,7 +197,7 @@ def get_embedding_finetuned(dataDir, readFile, wrtDir):
     allParams['learning_rate'] = 2e-5
     allParams['epsilon'] = 1e-8
 
-    multiTask = model.multiTaskModel(allParams)
+    multiTask = model.SRLModelTrainer(allParams)
     multiTask.load_multi_task_model(loadedDict)
     
     for i, line in enumerate(data):

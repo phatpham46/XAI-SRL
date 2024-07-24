@@ -18,7 +18,7 @@ from utils.data_utils import METRICS, TaskType
 from SRL.data_manager import allTasksDataset, Batcher, batchUtils
 from torch.utils.data import Dataset, DataLoader, BatchSampler
 from logger_ import make_logger
-from SRL.model import multiTaskModel
+from SRL.model import SRLModelTrainer
 from SRL.eval import evaluate
 TF_ENABLE_ONEDNN_OPTS=0
 
@@ -550,7 +550,7 @@ def main():
     logger.info("NUM TRAIN STEPS: {}".format(allParams['num_train_steps']))
     logger.info("len of dataloader: {}".format(len(multiTaskDataLoaderTrain)))
     logger.info("Making multi-task model...")
-    model = multiTaskModel(allParams)
+    model = SRLModelTrainer(allParams)
     print(model)
     
     if args.load_saved_model:

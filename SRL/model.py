@@ -7,9 +7,9 @@ from utils import data_utils
 from transformers import AdamW, get_linear_schedule_with_warmup
 logger = logging.getLogger("multi_task")
 
-class multiTaskNetwork(nn.Module):
+class SharedModelNetwork(nn.Module):
     def __init__(self, params):
-        super(multiTaskNetwork, self).__init__()
+        super(SharedModelNetwork, self).__init__()
         self.params = params
         self.taskParams = self.params['task_params']
         assert self.taskParams.modelType in data_utils.ModelType._value2member_map_, "Model Type is recognized, check in data_utils"
@@ -87,19 +87,18 @@ class multiTaskNetwork(nn.Module):
 
         # SequenceOutput has shape: (batchSize, maxSeqLen, hiddenSize=768))
         sequenceOutput = self.allDropouts[taskName](outputs[0])
+        
         # sequenceOutput = outputs[0]
         logits = self.allHeaders[taskName](sequenceOutput)
         
-        
         return outputs, logits
     
-            
-    
-class multiTaskModel:
+   
+class SRLModelTrainer:
     '''
     This is the model helper class which is responsible for building the 
     model architecture and training. It has following functions
-    1. Make the multi-task network
+    1. Make the shared task network
     2. set optimizer with linear scheduler and warmup
     3. Multi-gpu support
     4. Task specific loss function
@@ -116,9 +115,9 @@ class multiTaskModel:
         # making model
         if torch.cuda.device_count() > 1:
             logger.info("Using number of gpus: {}".format(torch.cuda.device_count()))
-            self.network = nn.DataParallel(multiTaskNetwork(params))
+            self.network = nn.DataParallel(SharedModelNetwork(params))
         else:
-            self.network = multiTaskNetwork(params)
+            self.network = SharedModelNetwork(params)
             logger.info('Using single GPU')
 
 
@@ -127,12 +126,12 @@ class multiTaskModel:
             self.network.cuda()
 
         
-        #optimizer and scheduler
+        # optimizer and scheduler
         self.optimizer, self.scheduler = self.make_optimizer(numTrainSteps=self.params['num_train_steps'],
                                                             warmupSteps=self.params['warmup_steps'],
                                                             lr = self.params["learning_rate"],
                                                             eps = self.params["epsilon"])
-        #loss class list
+        # loss class list
         self.lossClassList = self.make_loss_list()
 
 
@@ -228,7 +227,6 @@ class multiTaskModel:
             self.scheduler.step()
 
             self.optimizer.zero_grad()
-            # self.globalStep += 1
            
             # reset accumulated steps
             self.accumulatedStep = 0
@@ -251,12 +249,9 @@ class multiTaskModel:
       
     
         outLogitsSoftmax = nn.functional.softmax(outLogits, dim = 2).data.cpu().numpy()
-        ouLogitsSigmoid = nn.functional.sigmoid(outLogits).data.cpu().numpy()
         #shape of outlogits now (batchSize, maxSeqLen, classNum)
         
         predicted = np.argmax(outLogitsSoftmax, axis = 2)
-        # here in score, we only want to give out the score of the class of tag, which is maximum
-        predScore = np.max(ouLogitsSigmoid, axis = 2).tolist()
         
         #shape of predicted now (batchSize, maxSeqLen)
         logger.debug("Final Predictions shape after argmx: {}".format(predicted.shape))
@@ -266,18 +261,16 @@ class multiTaskModel:
         # get the attention masks, we need to discard the predictions made for extra padding
         attnMasksBatch = batchData[2]
         predictedTags = []
-        predScoreTags = []
         logitSm = []
         if attnMasksBatch is not None:
             #shape of attention Masks (batchSize, maxSeqLen)
             actualLengths = attnMasksBatch.cpu().numpy().sum(axis = 1).tolist()
-            for i, (pred, sc) in enumerate(zip(predicted, predScore)):
+            for i, pred in enumerate(predicted):
                 predictedTags.append( pred[:actualLengths[i]] )
-                predScoreTags.append( sc[:actualLengths[i]])
                 logitSm.append(outLogitsSoftmax[i][:actualLengths[i]])
-            return predictedTags, predScoreTags, logitSm
+            return predictedTags, logitSm
         else:
-            return predicted, predScore, outLogitsSoftmax
+            return predicted, outLogitsSoftmax
        
 
     def save_multi_task_model(self, savePath):
