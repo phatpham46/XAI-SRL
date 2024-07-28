@@ -1,6 +1,6 @@
 import json
 import torch
-from mlm_utils.model_utils import NUM_CPU
+from utils.data_utils import NUM_CPU
 from torch.utils.data import Dataset, DataLoader, SequentialSampler
 
 class PerturbedDataset(Dataset):

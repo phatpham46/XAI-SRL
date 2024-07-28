@@ -5,7 +5,7 @@ from MLM.mlm_utils.pertured_dataset import PerturbedDataset
 from utils.data_utils import TaskType, NLP_MODELS
 from SRL.model import SRLModelTrainer
 from transformers import BertModel, BertTokenizer
-from data_preparation import * 
+from srldata_preparation import * 
 import os
 import torch
 class inferPipeline:

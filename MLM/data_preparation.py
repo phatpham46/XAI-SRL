@@ -5,9 +5,8 @@ import re
 import torch
 import pandas as pd
 from tqdm import tqdm
-from mlm_utils.transform_func import get_pos_tag_word, get_word_list, check_data_dir, decode_token, encode_text, get_files, pos_tag_mapping
-from mlm_utils.model_utils import NLP
-from utils.data_utils import NLP_MODELS
+from mlm_utils.transform_func import get_pos_tag_word, get_word_list, check_data_dir, decode_token, encode_text, get_files
+from utils.data_utils import NLP_MODELS, NLP, POS_TAG_MAPPING
 
 
 def srl_preparation(readDir: str, writeDir: str) -> None:
@@ -117,7 +116,7 @@ def get_tokens_for_words(words: list, input_ids: list, offsets: list, tokenizer)
                                 if item not in except_tokens ]  for (word, tokens) in word_dict.items() }
 
 
-def masking_content_word(words: list, input_ids: torch.tensor, offsets: list, tokenizer):
+def masking_content_word(words: list, input_ids: torch.tensor, offsets: list, tokenizer, pos_tag_mapping):
     '''
     Function to mask the content words in the sentence. Each content word has a mask token id and a pos tag label.
     Therefore, one sentence can have multiple masked sentences.
@@ -140,7 +139,7 @@ def masking_content_word(words: list, input_ids: torch.tensor, offsets: list, to
     
     for (key, value) in word_dict.items():
         masked_ids = input_ids.clone() 
-        origin_sample = decode_token(masked_ids[0], skip_special_tokens=True)
+        origin_sample = decode_token(masked_ids[0], tokenizer, skip_special_tokens=True)
         if get_pos_tag_word(key, origin_sample).get(key) in ['NOUN', 'VERB', 'ADJ', 'ADV']:
             for i in range(len(masked_ids[0]) - len(value) + 1):
                 masked_id = masked_ids.clone()
@@ -152,14 +151,14 @@ def masking_content_word(words: list, input_ids: torch.tensor, offsets: list, to
                     masked_indice[masked_id == tokenizer.mask_token_id] = 1
                     for idx, mask in enumerate(masked_indice[0]):
                         if mask == 1:
-                            label[0][idx] = pos_tag_mapping(get_pos_tag_word(key, origin_sample).get(key))
+                            label[0][idx] = pos_tag_mapping[get_pos_tag_word(key, origin_sample).get(key)]
                             
                     list_pos_tag_labels.append(label)
                     list_masked_ids.append(masked_id)
     
     return input_ids, list_pos_tag_labels, list_masked_ids
 
-def data_preprocessing(dataDir: str, labelDir: str, wriDir: str, tokenizer):
+def data_preprocessing(dataDir: str, labelDir: str, wriDir: str, tokenizer, pos_tag_mapping) -> None:
     '''
     data_preprocessing('./interim/', './mlm_output/')
     Function to create data in MLM format.
@@ -196,14 +195,15 @@ def data_preprocessing(dataDir: str, labelDir: str, wriDir: str, tokenizer):
                 word_lst = get_word_list(sample)
                 
                 # Encode the sentence
-                tokenized_sentence = encode_text(' '.join(word_lst))
+                tokenized_sentence = encode_text(' '.join(word_lst), tokenizer)
                 
                 # Mask the content words
                 input_id, pos_tag_ids, list_masked_id = masking_content_word(
                     word_lst, 
                     tokenized_sentence['input_ids'], 
                     tokenized_sentence['offset_mapping'][0],
-                    tokenizer
+                    tokenizer,
+                    pos_tag_mapping
                     )
                 # Create a feature for each masked sentence
                 for pos_tag_id, masked_id in zip(pos_tag_ids, list_masked_id):
@@ -231,7 +231,7 @@ def data_preprocessing(dataDir: str, labelDir: str, wriDir: str, tokenizer):
 def main():
     _, _, tokenizer, _ = NLP_MODELS['bert']
     srl_preparation('./data_mlm/raw_folder/interim/', './data_mlm/raw_folder/coNLL_tsv/')
-    data_preprocessing('./data_mlm/raw_folder/interim/', './data_mlm/process_folder/coNLL_tsv_json/ner_json/', './data_mlm/process_folder/mlm_output_v2/', tokenizer)
+    data_preprocessing('./data_mlm/raw_folder/interim/', './data_mlm/process_folder/coNLL_tsv_json/ner_json/', './data_mlm/process_folder/mlm_output_v2/', tokenizer, POS_TAG_MAPPING)
     
 if __name__ == "__main__":
     main() 

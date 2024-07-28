@@ -4,7 +4,7 @@ import logging
 import numpy as np
 import SRL.dropout 
 from utils import data_utils
-from transformers import AdamW, get_linear_schedule_with_warmup
+from transformers import get_linear_schedule_with_warmup
 logger = logging.getLogger("multi_task")
 
 class SharedModelNetwork(nn.Module):

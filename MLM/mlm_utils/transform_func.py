@@ -1,10 +1,28 @@
 
+import json
 import os
-import torch
-from mlm_utils.model_utils import NLP, MAX_SEQ_LEN, POS_TAG_MAPPING
+import sys
+sys.path.append('../')
+from utils.data_utils import NLP, MAX_SEQ_LEN 
 
-def check_data_dir(data_dir: str, auto_create=False) -> None:
-    """Check if the data directory exists. If it does not exist, create it if auto_create is True.
+def read_data(readPath):
+    """Read json data and return as list of dictionaries.
+
+    Args:
+        readPath (`obj`: str): path to the file to read
+
+    Returns:
+        list: list of dictionaries 
+    """
+    
+    with open(readPath, 'r', encoding = 'utf-8') as file:
+        taskData = list(map(json.loads, file))
+          
+    return taskData
+
+def check_data_dir(data_dir: str, auto_create=False):
+    """
+    Check if the data directory exists. If it does not exist, create it if auto_create is True.
 
     Args:
         data_dir (str): Path to the data directory.
@@ -20,8 +38,16 @@ def check_data_dir(data_dir: str, auto_create=False) -> None:
         else:
             raise FileNotFoundError(f"Data directory {data_dir} does not exist.")
 
-def get_files(dir: str) -> list:
-    '''Function to get the list of files in a given folder'''
+def get_files(dir: str):
+    """
+    Function to get the list of files in a given folder.
+    
+    Args:   
+        dir (str): Path to the directory
+        
+    Returns:
+        list: list of files in the directory
+    """
     
     files = []
     for path in os.listdir(dir):
@@ -30,9 +56,17 @@ def get_files(dir: str) -> list:
     return files
 
 
-def get_pos_tag_word(word:str, text:str) -> dict:
-    '''
-    Return dictionary with key is the word and value is the pos tag of the word'''
+def get_pos_tag_word(word:str, text:str):
+    """
+    Return dictionary with key is the word and value is the pos tag of each token for that word.
+    
+    Args:
+        word (str): The word to get the pos tag
+        text (str): The text that contains the word
+
+    Returns:
+        dict: dictionary with key is the word and value is the pos tag of each token for that word.
+    """
     doc = NLP(text)
     word_split = word.split()
     pos_tag_dict = {}
@@ -42,50 +76,9 @@ def get_pos_tag_word(word:str, text:str) -> dict:
     return pos_tag_dict
 
 
-def get_word_list(text: str) -> list:
-    '''Function to get the list of words from a given sentence using SpaCy'''
-    
-    doc = NLP(text)
-    word_lst = [word.text for word in [token for token in doc]]
-    return word_lst
-
-
-def pos_tag_mapping(pos_tag):
-    if pos_tag == "NOUN":
-        return 1
-    elif pos_tag =="VERB":
-        return 2
-    elif pos_tag =="ADJ":
-        return 3
-    elif pos_tag == "ADV":
-        return 4
-    else:
-        return 0
-
-def get_pos_tag_id(word_dict:dict, pos_tag_dict: dict, label_id:list):
-    '''
-    Function to get the pos tag id from the label id. 
-    for example:
-        input:  129, 15, 324, 34, 255, 12
-        output  1, 1, 1, 2, 3, 4 (NOUN, NOUN, NOUN, VERB, ADJ, ADV)
-    '''
-    pos_tag_id = torch.full_like(label_id, fill_value=-1)
-    
-    for key in pos_tag_dict.keys():
-        tokens = word_dict.get(key)
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        tokens = tokens.to(device)
-        for i in range(len(label_id) - len(tokens) + 1):
-            if torch.equal(torch.as_tensor(label_id[i:i+len(tokens)]).clone().detach(), torch.as_tensor(tokens).clone().detach()):
-               
-                pos_tag_id[i:i+len(tokens)] = POS_TAG_MAPPING[pos_tag_dict.get(key)]
- 
-    return pos_tag_id
-
 def get_idx_arg_preds(preds_origin, preds_masked, label_origin=None): # label_origin: nhãn gold
     list_idx_arg_change = []
  
-    
     for i in range(min(len(preds_masked), len(preds_origin))):
         test = preds_origin[i].startswith('B-A') or preds_origin[i].startswith('I-A') or preds_masked[i].startswith('B-A') or preds_masked[i].startswith('I-A')
         if label_origin:
@@ -98,14 +91,35 @@ def get_idx_arg_preds(preds_origin, preds_masked, label_origin=None): # label_or
    
     return list_idx_arg_change
     
-def decode_token(input_ids: list, tokenizer, skip_special_tokens=False) -> str:
-    ''' Funciton to decode the token to text
-    '''
+def decode_token(input_ids: list, tokenizer, skip_special_tokens=False):
+    """
+    Funciton to decode the token to text.
+    
+    Args:
+        input_ids (list): list of input ids
+        tokenizer (obj): tokenizer object
+        skip_special_tokens (bool): skip special tokens or not
+        
+    Returns:
+        str: decoded text
+    
+    """
     
     return tokenizer.decode(input_ids, skip_special_tokens=skip_special_tokens, return_offsets_mapping=True)
 
-def encode_text(text: str, tokenizer) -> dict:
-    ''' Function to encode the text '''
+def encode_text(text: str, tokenizer):
+    """
+    Function to encode the text using the tokenizer.
+    
+    Args: 
+        text (str): text to encode
+        tokenizer (obj): tokenizer object
+        
+    Returns:
+        dict: dictionary containing the encoded text
+    
+    """
+    
     return tokenizer.encode_plus(
                     text,
                     max_length=MAX_SEQ_LEN,

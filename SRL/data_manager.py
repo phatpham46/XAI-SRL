@@ -1,8 +1,7 @@
 '''
 Script to manage datasets for multiple tasks
 '''
-from torch.utils.data import Dataset, DataLoader, BatchSampler
-from utils.data_utils import TaskType, ModelType
+from torch.utils.data import Dataset, BatchSampler
 import torch
 import random
 import logging

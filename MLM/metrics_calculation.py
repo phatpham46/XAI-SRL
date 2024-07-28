@@ -8,7 +8,7 @@ import pandas as pd
 sys.path.append('../')
 from infer_pipeline import inferPipeline
 from data_maker import DataMaker
-from data_preparation import * 
+from srldata_preparation import * 
 from mlm_utils.transform_func import get_files, check_data_dir, get_idx_arg_preds
 from mlm_utils.metric_func import influence_score, relevance_score, brier_score_multi_class, competence_score
 from scipy.stats import spearmanr
@@ -117,15 +117,11 @@ def get_comp_each_arg(dataMaskedDir, dataOriginDir, model, labelRn, logger, wriD
 def plot_corr(comp_list, brier_score_list, save_img=False, save_path=None):
     
     plt.scatter(comp_list, brier_score_list)
-   
     plt.xlabel('Competence')
     plt.ylabel('1 - Brier Score')
     plt.title('Correlation between Competence vs (1 - Brier Score)')
-  
-    # Hiển thị biểu đồ
     plt.grid(True)
     
-    plt.show()
     if save_img and save_path is not None:
         plt.savefig(save_path)
 
@@ -167,7 +163,7 @@ def main():
     list_comp_dict = get_comp_each_arg(args.data_mask_dir, args.data_origin_dir, pipe.model, labelRn, logger, args.wriDir, is_mask_token=args.is_mask_token, del_mask_token=args.del_mask_token)
    
    
-    # Task 1.2: correlation between competence and brier score
+    # Correlation between competence and brier score
     comp_list = []
     brier_score_list = []
     for entry in list_comp_dict:

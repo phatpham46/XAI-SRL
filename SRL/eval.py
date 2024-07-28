@@ -5,7 +5,7 @@ import pandas as pd
 from tqdm import tqdm
 from utils.data_utils import METRICS, TaskType
 
-logger = logging.getLogger("srl_task")
+logger = logging.getLogger("srl_task_logs")
 def evaluate(dataSet, batchSampler, dataLoader, taskParams,
             model, gpu, evalBatchSize, needMetrics, hasTrueLabels,
             wrtDir=None, wrtPredPath = None, returnPred=False):
@@ -20,6 +20,7 @@ def evaluate(dataSet, batchSampler, dataLoader, taskParams,
     allLabels_str = [[] for _ in range(numTasks)]
     allIds = [[] for _ in range(numTasks)]
     allLogits = [[] for _ in range(numTasks)]
+    
     for batchMetaData, batchData in tqdm(dataLoader, total=numStep, desc = 'Eval'):
         batchMetaData, batchData = batchSampler.patch_data(batchMetaData,batchData, gpu = gpu)
         prediction, logitSm = model.predict_step(batchMetaData, batchData)
@@ -93,9 +94,7 @@ def evaluate(dataSet, batchSampler, dataLoader, taskParams,
                 for m in metrics:
                     metricVal = METRICS[m](allLabels[i], allPreds[i])
                     logger.info("{} : {}".format(m, metricVal))
-                    brier_score = METRICS['brier_score'](allLabels_str[i], allLogits[i])
-                    logger.info("Brier Score : {}".format(brier_score))
-
+                    
     if wrtPredPath is not None and wrtDir is not None:
         for i in range(len(allPreds)):
             if allPreds[i] == []:

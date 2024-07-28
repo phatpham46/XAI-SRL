@@ -3,7 +3,7 @@ import torch
 from enum import IntEnum
 from transformers import BertConfig, BertModel, BertTokenizerFast
 from SRL.loss import *
-from utils.tranform_functions import pasbio_srl_to_tsv, get_embedding, get_embedding_finetuned, convert_csv_to_txt
+from utils.tranform_functions import pasbio_srl_to_tsv, convert_csv_to_txt
 from utils.eval_metrics import *
 from multiprocessing import cpu_count
 
@@ -35,8 +35,6 @@ NUM_CPU, NUM_GPU = count_num_cpu_gpu()
 
 TRANSFORM_FUNCS = {
     "pasbio_srl_to_tsv" : pasbio_srl_to_tsv,
-    "get_embedding" : get_embedding,
-    "get_embedding_finetuned" : get_embedding_finetuned,
     "convert_csv_to_txt": convert_csv_to_txt
 }
 

@@ -1,102 +1,40 @@
 transform1:
   transform_func: pasbio_srl_to_tsv
   readpasbio_names:
-    - pasbio_train.txt
-    - pasbio_testa.txt
-    - pasbio_testb.txt
-    - pasbio_testa_abolish.txt
-    - pasbio_testb_abolish.txt
-    - pasbio_testa_alter.txt
-    - pasbio_testb_alter.txt
-    - pasbio_testa_begin.txt
-    - pasbio_testb_begin.txt
-    - pasbio_testa_block.txt
-    - pasbio_testb_block.txt
-    - pasbio_testa_catalyse.txt
-    - pasbio_testb_catalyse.txt
-    - pasbio_testa_confer.txt
-    - pasbio_testb_confer.txt
-    - pasbio_testa_decrease.txt
-    - pasbio_testb_decrease.txt
-    - pasbio_testa_delete.txt
-    - pasbio_testb_delete.txt
-    - pasbio_testa_develop.txt
-    - pasbio_testb_develop.txt
-    - pasbio_testa_disrupt.txt
-    - pasbio_testb_disrupt.txt
-    - pasbio_testa_eliminate.txt
-    - pasbio_testb_eliminate.txt
-    - pasbio_testa_encode.txt
-    - pasbio_testb_encode.txt
-    - pasbio_testa_express.txt
-    - pasbio_testb_express.txt
-    - pasbio_testa_generate.txt
-    - pasbio_testb_generate.txt
-    - pasbio_testa_inhibit.txt
-    - pasbio_testb_inhibit.txt
-    - pasbio_testa_initiate.txt
-    - pasbio_testb_initiate.txt
-    - pasbio_testa_lead.txt
-    - pasbio_testb_lead.txt
-    - pasbio_testa_lose.txt
-    - pasbio_testb_lose.txt
-    - pasbio_testa_modify.txt
-    - pasbio_testb_modify.txt
-    - pasbio_testa_mutate.txt
-    - pasbio_testb_mutate.txt
-    - pasbio_testa_proliferate.txt
-    - pasbio_testb_proliferate.txt
-    - pasbio_testa_recognize.txt
-    - pasbio_testb_recognize.txt
-    - pasbio_testa_result.txt
-    - pasbio_testb_result.txt
-    - pasbio_testa_skip.txt
-    - pasbio_testb_skip.txt
-    - pasbio_testa_splice.txt
-    - pasbio_testb_splice.txt
-    - pasbio_testa_transcribe.txt
-    - pasbio_testb_transcribe.txt
-    - pasbio_testa_transform.txt
-    - pasbio_testb_transform.txt
-    - pasbio_testa_translate.txt
-    - pasbio_testb_translate.txt
-    - pasbio_testa_truncate.txt
-    - pasbio_testb_truncate.txt
-  # - pasbio_format_abolish_full.txt
-  # - pasbio_format_begin_2_full.txt
-  # - pasbio_format_alter_full.txt
-  # - pasbio_format_block_full.txt
-  # - pasbio_format_begin_1_full.txt
-  # - pasbio_format_catalyse_full.txt
-  # - pasbio_format_confer_full.txt
-  # - pasbio_format_decrease_1_full.txt
-  # - pasbio_format_decrease_2_full.txt
-  # - pasbio_format_delete_full.txt
-  # - pasbio_format_develop_full.txt
-  # - pasbio_format_disrupt_full.txt
-  # - pasbio_format_eliminate_full.txt
-  # - pasbio_format_encode_full.txt
-  # - pasbio_format_express_full.txt
-  # - pasbio_format_generate_full.txt
-  # - pasbio_format_inhibit_full.txt
-  # - pasbio_format_initiate_full.txt
-  # - pasbio_format_lead_full.txt
-  # - pasbio_format_lose_full.txt
-  # - pasbio_format_modify_full.txt
-  # - pasbio_format_mutate_full.txt
-  # - pasbio_format_proliferate_full.txt
-  # - pasbio_format_recognize_full.txt
-  # - pasbio_format_result_full.txt
-  # - pasbio_format_skip_full.txt
-  # - pasbio_format_splice_1_full.txt
-  # - pasbio_format_splice_2_full.txt
-  # - pasbio_format_transcribe_full.txt
-  # - pasbio_format_transform_1_full.txt
-  # - pasbio_format_transform_2_full.txt
-  # - pasbio_format_translate_1_full.txt
-  # - pasbio_format_translate_2_full.txt
-  # - pasbio_format_translate_3_full.txt
-  # - pasbio_format_truncate_full.txt
-  read_dir: /mnt/c/Users/Phat Pham/Documents/THESIS/SRLPredictionEasel/data/pasbio_data
-  # read_dir: ../MLM/coNLL_txt
-  save_dir: /mnt/c/Users/Phat Pham/Documents/THESIS/SRLPredictionEasel/data/srl_tsv
+  - pasbio_format_abolish_full.txt
+  - pasbio_format_begin_2_full.txt
+  - pasbio_format_alter_full.txt
+  - pasbio_format_block_full.txt
+  - pasbio_format_begin_1_full.txt
+  - pasbio_format_catalyse_full.txt
+  - pasbio_format_confer_full.txt
+  - pasbio_format_decrease_1_full.txt
+  - pasbio_format_decrease_2_full.txt
+  - pasbio_format_delete_full.txt
+  - pasbio_format_develop_full.txt
+  - pasbio_format_disrupt_full.txt
+  - pasbio_format_eliminate_full.txt
+  - pasbio_format_encode_full.txt
+  - pasbio_format_express_full.txt
+  - pasbio_format_generate_full.txt
+  - pasbio_format_inhibit_full.txt
+  - pasbio_format_initiate_full.txt
+  - pasbio_format_lead_full.txt
+  - pasbio_format_lose_full.txt
+  - pasbio_format_modify_full.txt
+  - pasbio_format_mutate_full.txt
+  - pasbio_format_proliferate_full.txt
+  - pasbio_format_recognize_full.txt
+  - pasbio_format_result_full.txt
+  - pasbio_format_skip_full.txt
+  - pasbio_format_splice_1_full.txt
+  - pasbio_format_splice_2_full.txt
+  - pasbio_format_transcribe_full.txt
+  - pasbio_format_transform_1_full.txt
+  - pasbio_format_transform_2_full.txt
+  - pasbio_format_translate_1_full.txt
+  - pasbio_format_translate_2_full.txt
+  - pasbio_format_translate_3_full.txt
+  - pasbio_format_truncate_full.txt
+  read_dir: ./data/pasbio_data
+  save_dir: ./data/srl_tsv

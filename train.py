@@ -11,12 +11,10 @@ import os
 import math
 from datetime import datetime
 from tqdm import tqdm
-from torch.utils.tensorboard import SummaryWriter
 from utils.task_utils import TasksParam   
-from utils.data_utils import METRICS, TaskType
 
 from SRL.data_manager import allTasksDataset, Batcher, batchUtils
-from torch.utils.data import Dataset, DataLoader, BatchSampler
+from torch.utils.data import DataLoader
 from logger_ import make_logger
 from SRL.model import SRLModelTrainer
 from SRL.eval import evaluate
@@ -227,8 +225,6 @@ def main():
     allParams['gpu'] = torch.cuda.is_available()
     logger.info('task parameters:\n {}'.format(taskParams.taskDetails))
 
-    tensorboard = SummaryWriter(log_dir = os.path.join(logDir, 'tb_logs'))
-    logger.info("Tensorboard writing at {}".format(os.path.join(logDir, 'tb_logs')))
 
     # making handlers for train
     logger.info("Creating data handlers for training...")
@@ -598,10 +594,7 @@ def main():
                     taskName = taskParams.taskIdNameMap[taskId]
                     avgLoss = totalEpochLoss / (i+1)
                    
-                    tensorboard.add_scalar('train/avg_loss', avgLoss, global_step= model.globalStep)
-                    tensorboard.add_scalar('train/{}_loss'.format(taskName),
-                                            model.taskLoss.item(),
-                                            global_step=model.globalStep)
+                    
                 
                 if args.save_per_updates > 0 and  ((model.globalStep+1) % args.save_per_updates)==0 and (model.accumulatedStep+1==args.grad_accumulation_steps):
                     savePath = os.path.join(args.out_dir, 'multi_task_model_{}_{}.pt'.format(epoch,
