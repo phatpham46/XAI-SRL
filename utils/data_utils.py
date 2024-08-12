@@ -62,5 +62,5 @@ METRICS = {
 
 LOSSES = {
     "crossentropyloss" : CrossEntropyLoss,
-    "nerloss" : SRLLoss
+    "srlloss" : SRLLoss
 }

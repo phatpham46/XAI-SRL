@@ -13,7 +13,10 @@ class PerturbedDataset(Dataset):
             for i, line in enumerate(file):
                 sample = json.loads(line)
                 self.data.append(sample)
-            
+        
+        # sort data by uid
+        self.data.sort(key=lambda x: x['uid']) 
+               
     def __len__(self):
         return len(self.data)
   
